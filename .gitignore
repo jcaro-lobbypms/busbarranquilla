@@ -6,10 +6,12 @@ mobile/.env
 # Dependencias
 node_modules/
 backend/node_modules/
+web/node_modules/
 mobile/node_modules/
 
 # Build
 backend/dist/
+web/dist/
 mobile/.expo/
 
 # Sistema

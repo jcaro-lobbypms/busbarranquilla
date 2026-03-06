@@ -426,10 +426,10 @@ Functions: `getUsers`, `updateUserRole`, `toggleUserActive`, `deleteUser`, `getC
 - Removed "Cómo llegar a pie" (Google Maps external link) from waiting view
 
 ### Phase 3 — Upcoming
-- Wompi payments integration
-- Active premium plans
 - Deploy to Vercel + Railway
 - Connect mibus.co domain
+- Wompi payments integration
+- Active premium plans
 
 ### Phase 4 — Future
 - React Native mobile app

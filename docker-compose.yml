@@ -6,9 +6,9 @@ services:
     image: postgres:15
     container_name: busbarranquilla_db
     environment:
-      POSTGRES_USER: busadmin
-      POSTGRES_PASSWORD: busbarranquilla123
-      POSTGRES_DB: busbarranquilla
+      POSTGRES_USER: ${POSTGRES_USER:-busadmin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-busbarranquilla123}
+      POSTGRES_DB: ${POSTGRES_DB:-busbarranquilla}
     ports:
       - "5432:5432"
     volumes:
@@ -29,11 +29,12 @@ services:
     container_name: busbarranquilla_backend
     environment:
       PORT: 3000
-      DATABASE_URL: postgresql://busadmin:busbarranquilla123@postgres:5432/busbarranquilla
-      JWT_SECRET: busbarranquilla_secret_key_2024
+      DATABASE_URL: postgresql://${POSTGRES_USER:-busadmin}:${POSTGRES_PASSWORD:-busbarranquilla123}@postgres:5432/${POSTGRES_DB:-busbarranquilla}
+      JWT_SECRET: ${JWT_SECRET:-busbarranquilla_secret_key_2024}
       REDIS_URL: redis://redis:6379
     ports:
       - "3000:3000"
+    command: npm run dev
     depends_on:
       - postgres
       - redis
@@ -61,6 +62,7 @@ services:
       VITE_GOOGLE_MAPS_KEY: ${VITE_GOOGLE_MAPS_KEY}
     ports:
       - "5173:5173"
+    command: npm run dev
     depends_on:
       backend:
         condition: service_healthy
