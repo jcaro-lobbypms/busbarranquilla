@@ -134,6 +134,7 @@ const createTables = async () => {
     await pool.query(`ALTER TABLE reports ADD COLUMN IF NOT EXISTS report_lat DECIMAL(10,8)`);
     await pool.query(`ALTER TABLE reports ADD COLUMN IF NOT EXISTS report_lng DECIMAL(11,8)`);
     await pool.query(`ALTER TABLE reports ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ DEFAULT NULL`);
+    await pool.query(`ALTER TABLE reports ADD COLUMN IF NOT EXISTS credits_awarded_to_reporter BOOLEAN NOT NULL DEFAULT FALSE`);
 
     // Descripción textual del recorrido (para detectar cambios en scraper)
     await pool.query(`ALTER TABLE routes ADD COLUMN IF NOT EXISTS description TEXT`);
@@ -146,6 +147,18 @@ const createTables = async () => {
     await pool.query(`
       ALTER TABLE routes ADD COLUMN IF NOT EXISTS geometry JSONB DEFAULT NULL
     `);
+
+    // Tabla de confirmaciones de reportes por usuario
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS report_confirmations (
+        id SERIAL PRIMARY KEY,
+        report_id INTEGER NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(report_id, user_id)
+      )
+    `);
+    console.log('✅ Tabla report_confirmations creada');
 
     // Tabla de rutas favoritas por usuario
     await pool.query(`

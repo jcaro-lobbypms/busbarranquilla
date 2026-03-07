@@ -1,14 +1,14 @@
 import { Request, Response } from 'express';
 import pool from '../config/database';
 import { awardCredits } from './creditController';
+import { getIo } from '../config/socket';
 
 const VALID_TYPES = [
   'bus_location', 'traffic', 'bus_full', 'no_service', 'detour',
-  'desvio', 'trancon', 'casi_lleno', 'lleno', 'sin_parar', 'espera',
+  'desvio', 'trancon', 'lleno', 'sin_parar', 'espera',
   'bus_disponible',
 ] as const;
 
-// bus_disponible = 0 créditos (toggle sin incentivo económico)
 const CREDITS_BY_TYPE: Record<string, number> = {
   bus_location: 5,
   traffic: 4,
@@ -17,18 +17,16 @@ const CREDITS_BY_TYPE: Record<string, number> = {
   detour: 4,
   desvio: 4,
   trancon: 4,
-  casi_lleno: 3,
   lleno: 3,
   sin_parar: 4,
   espera: 3,
-  bus_disponible: 0,
+  bus_disponible: 3,
 };
 
-const OCCUPANCY_TYPES: string[] = ['lleno', 'casi_lleno', 'bus_disponible'];
+const OCCUPANCY_TYPES: string[] = ['lleno', 'bus_disponible'];
 // Distancia máxima a parada más cercana para reportes válidos
 const GEO_MAX_METERS: Record<string, number> = {
   lleno: 300,
-  casi_lleno: 300,
   bus_disponible: 300,
   default: 500,
 };
@@ -65,7 +63,7 @@ async function minDistanceToRoute(routeId: number, lat: number, lng: number): Pr
 // con threshold dinámico según usuarios activos en la ruta.
 
 async function computeOccupancy(routeId: number): Promise<{
-  state: 'lleno' | 'casi_lleno' | 'disponible' | null;
+  state: 'lleno' | 'disponible' | null;
   counts: Record<string, number>;
   activeUsers: number;
 }> {
@@ -88,16 +86,14 @@ async function computeOccupancy(routeId: number): Promise<{
     [routeId, OCCUPANCY_TYPES]
   );
 
-  const counts: Record<string, number> = { lleno: 0, casi_lleno: 0, bus_disponible: 0 };
+  const counts: Record<string, number> = { lleno: 0, bus_disponible: 0 };
   for (const row of repRes.rows) counts[row.type] = parseInt(row.cnt, 10);
 
   // Threshold dinámico: 1 usuario activo → basta 1 reporte; 2+ → se necesitan 2
   const threshold = activeUsers <= 1 ? 1 : 2;
 
-  // Para revertir (disponible) se requiere threshold estricto
   if (counts.bus_disponible >= threshold) return { state: 'disponible', counts, activeUsers };
   if (counts.lleno >= threshold) return { state: 'lleno', counts, activeUsers };
-  if (counts.casi_lleno >= threshold) return { state: 'casi_lleno', counts, activeUsers };
   return { state: null, counts, activeUsers };
 }
 
@@ -151,18 +147,68 @@ export const createReport = async (req: Request, res: Response): Promise<void> =
       }
     }
 
+    // ── Determinar si el usuario está en viaje activo en esta ruta ───────
+    let userOnThisRoute = false;
+    let otherActiveUsers = 0;
+
+    if (route_id) {
+      const tripCheck = await pool.query(
+        `SELECT id FROM active_trips WHERE user_id = $1 AND route_id = $2 AND is_active = true LIMIT 1`,
+        [userId, route_id]
+      );
+      userOnThisRoute = tripCheck.rows.length > 0;
+
+      if (userOnThisRoute) {
+        const othersRes = await pool.query(
+          `SELECT COUNT(*) AS cnt FROM active_trips WHERE route_id = $1 AND is_active = true AND user_id != $2`,
+          [route_id, userId]
+        );
+        otherActiveUsers = parseInt(othersRes.rows[0].cnt, 10);
+      }
+    }
+
+    // ── Calcular créditos y si se otorgan ahora ───────────────────────────
+    let creditsEarned = 0;
+    let creditsAwardedToReporter = false;
+
+    if (userOnThisRoute) {
+      // Sistema de créditos diferido: solo +1 si va solo en el bus
+      if (otherActiveUsers === 0) {
+        creditsEarned = 1;
+        creditsAwardedToReporter = true;
+        await awardCredits(userId, 1, 'earn', `Reporte: ${type}`);
+      }
+      // else: 0 ahora, +2 cuando confirmen, o +1 al terminar el viaje sin confirmación
+    } else {
+      // Fuera de viaje activo: sistema original de créditos
+      creditsEarned = CREDITS_BY_TYPE[type] ?? 0;
+      if (creditsEarned > 0) {
+        await awardCredits(userId, creditsEarned, 'earn', `Reporte: ${type}`);
+      }
+      creditsAwardedToReporter = creditsEarned > 0;
+    }
+
     const result = await pool.query(
-      `INSERT INTO reports (user_id, route_id, type, latitude, longitude, description)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO reports (user_id, route_id, type, latitude, longitude, description, credits_awarded_to_reporter)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [userId, route_id || null, type, latitude, longitude, description || null]
+      [userId, route_id || null, type, latitude, longitude, description || null, creditsAwardedToReporter]
     );
 
     const report = result.rows[0];
-    const creditsEarned = CREDITS_BY_TYPE[type] ?? 0;
 
-    if (creditsEarned > 0) {
-      await awardCredits(userId, creditsEarned, 'earn', `Reporte: ${type}`);
+    // ── Emitir evento en tiempo real a los demás usuarios de la ruta ─────
+    if (route_id) {
+      const needed = otherActiveUsers > 0 ? Math.ceil(otherActiveUsers * 0.5) : 1;
+      getIo().to(`route:${route_id}`).emit('route:new_report', {
+        report: {
+          ...report,
+          confirmed_by_me: false,
+          active_users: otherActiveUsers + 1,
+          needed_confirmations: needed,
+          is_valid: otherActiveUsers === 0,
+        },
+      });
     }
 
     res.status(201).json({
@@ -262,37 +308,165 @@ export const confirmReport = async (req: Request, res: Response): Promise<void> 
   const userId = (req as any).userId;
 
   try {
-    const result = await pool.query(
+    const reportRes = await pool.query(
       'SELECT * FROM reports WHERE id = $1 AND is_active = true AND expires_at > NOW()',
       [id]
     );
 
-    if (result.rows.length === 0) {
+    if (reportRes.rows.length === 0) {
       res.status(404).json({ message: 'Reporte no encontrado o expirado' });
       return;
     }
 
-    const report = result.rows[0];
+    const report = reportRes.rows[0];
 
     if (report.user_id === userId) {
       res.status(400).json({ message: 'No puedes confirmar tu propio reporte' });
       return;
     }
 
-    const updated = await pool.query(
-      'UPDATE reports SET confirmations = confirmations + 1 WHERE id = $1 RETURNING confirmations',
-      [id]
+    // Verificar que el confirmador esté en viaje activo en la misma ruta
+    if (report.route_id) {
+      const tripCheck = await pool.query(
+        `SELECT id FROM active_trips WHERE user_id = $1 AND route_id = $2 AND is_active = true LIMIT 1`,
+        [userId, report.route_id]
+      );
+      if (tripCheck.rows.length === 0) {
+        res.status(403).json({ message: 'Debes estar en esta ruta para confirmar el reporte' });
+        return;
+      }
+    }
+
+    // Verificar que no haya confirmado ya este reporte
+    const alreadyConfirmed = await pool.query(
+      `SELECT id FROM report_confirmations WHERE report_id = $1 AND user_id = $2`,
+      [id, userId]
+    );
+    if (alreadyConfirmed.rows.length > 0) {
+      res.status(400).json({ message: 'Ya confirmaste este reporte' });
+      return;
+    }
+
+    // Verificar límite de 3 créditos de confirmación por viaje
+    const tripRes = await pool.query(
+      `SELECT started_at FROM active_trips WHERE user_id = $1 AND is_active = true LIMIT 1`,
+      [userId]
+    );
+    if (tripRes.rows.length > 0) {
+      const confirmCreditsRes = await pool.query(
+        `SELECT COUNT(*) AS cnt FROM credit_transactions
+         WHERE user_id = $1 AND description = 'Confirmación de reporte' AND created_at >= $2`,
+        [userId, tripRes.rows[0].started_at]
+      );
+      if (parseInt(confirmCreditsRes.rows[0].cnt, 10) >= 3) {
+        res.status(429).json({ message: 'Ya alcanzaste el límite de 3 créditos de confirmación en este viaje' });
+        return;
+      }
+    }
+
+    // Registrar confirmación
+    await pool.query(
+      `INSERT INTO report_confirmations (report_id, user_id) VALUES ($1, $2)`,
+      [id, userId]
     );
 
-    await awardCredits(report.user_id, 2, 'earn', 'Confirmación de reporte');
+    // Incrementar contador de confirmaciones
+    const updated = await pool.query(
+      `UPDATE reports SET confirmations = confirmations + 1 WHERE id = $1
+       RETURNING confirmations, credits_awarded_to_reporter`,
+      [id]
+    );
+    const newConfirmations = updated.rows[0].confirmations;
+    const alreadyPaid = updated.rows[0].credits_awarded_to_reporter;
+
+    // Otorgar +1 al confirmador
+    await awardCredits(userId, 1, 'earn', 'Confirmación de reporte');
+
+    // Verificar si se alcanza el umbral de validez para pagar al reportador (+2)
+    const activeRes = await pool.query(
+      `SELECT COUNT(*) AS cnt FROM active_trips WHERE route_id = $1 AND is_active = true`,
+      [report.route_id]
+    );
+    const activeUsers = parseInt(activeRes.rows[0].cnt, 10);
+    const otherUsers = Math.max(0, activeUsers - 1);
+    const needed = Math.ceil(otherUsers * 0.5) || 1;
+    const isValid = activeUsers <= 1 || newConfirmations >= needed;
+
+    let reporterPaid = false;
+    if (isValid && !alreadyPaid) {
+      await awardCredits(report.user_id, 2, 'earn', 'Reporte confirmado por pasajeros');
+      await pool.query(
+        `UPDATE reports SET credits_awarded_to_reporter = true WHERE id = $1`,
+        [id]
+      );
+      reporterPaid = true;
+    }
+
+    // Emitir evento en tiempo real
+    if (report.route_id) {
+      getIo().to(`route:${report.route_id}`).emit('route:report_confirmed', {
+        reportId: parseInt(id, 10),
+        confirmations: newConfirmations,
+        is_valid: isValid,
+        needed_confirmations: needed,
+        reporter_paid: reporterPaid,
+      });
+    }
 
     res.json({
       message: 'Reporte confirmado',
-      confirmations: updated.rows[0].confirmations
+      confirmations: newConfirmations,
+      credits_earned: 1,
+      reporter_paid: reporterPaid,
+      is_valid: isValid,
     });
 
   } catch (error) {
     console.error('Error confirmando reporte:', error);
+    res.status(500).json({ message: 'Error interno del servidor' });
+  }
+};
+
+// Reportes activos de una ruta (para pasajeros en ese bus)
+export const getRouteReports = async (req: Request, res: Response): Promise<void> => {
+  const routeId = parseInt(req.params.routeId, 10);
+  const userId = (req as any).userId;
+
+  if (isNaN(routeId)) {
+    res.status(400).json({ message: 'routeId inválido' });
+    return;
+  }
+
+  try {
+    const activeRes = await pool.query(
+      `SELECT COUNT(*) AS cnt FROM active_trips WHERE route_id = $1 AND is_active = true`,
+      [routeId]
+    );
+    const activeUsers = parseInt(activeRes.rows[0].cnt, 10);
+    const otherUsers = Math.max(0, activeUsers - 1);
+    const needed = Math.ceil(otherUsers * 0.5) || 1;
+
+    const reportsRes = await pool.query(
+      `SELECT r.*,
+         CASE WHEN rc.user_id IS NOT NULL THEN true ELSE false END AS confirmed_by_me
+       FROM reports r
+       LEFT JOIN report_confirmations rc ON rc.report_id = r.id AND rc.user_id = $2
+       WHERE r.route_id = $1 AND r.is_active = true AND r.expires_at > NOW()
+         AND r.user_id != $2
+       ORDER BY r.created_at DESC`,
+      [routeId, userId]
+    );
+
+    const reports = reportsRes.rows.map((r) => ({
+      ...r,
+      active_users: activeUsers,
+      needed_confirmations: needed,
+      is_valid: activeUsers <= 1 || r.confirmations >= needed,
+    }));
+
+    res.json({ reports, active_users: activeUsers });
+  } catch (error) {
+    console.error('Error obteniendo reportes de ruta:', error);
     res.status(500).json({ message: 'Error interno del servidor' });
   }
 };

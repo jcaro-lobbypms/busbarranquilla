@@ -58,6 +58,12 @@ setIo(io);
 
 io.on('connection', (socket) => {
   console.log('Usuario conectado:', socket.id);
+  socket.on('join:route', (routeId: number) => {
+    socket.join(`route:${routeId}`);
+  });
+  socket.on('leave:route', (routeId: number) => {
+    socket.leave(`route:${routeId}`);
+  });
   socket.on('disconnect', () => {
     console.log('Usuario desconectado:', socket.id);
   });

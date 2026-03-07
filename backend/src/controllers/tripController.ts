@@ -130,6 +130,21 @@ export const endTrip = async (req: Request, res: Response): Promise<void> => {
 
     const trip = tripResult.rows[0];
 
+    // Auto-award +1 por reportes que no recibieron confirmación durante el viaje
+    const uncreditedRes = await pool.query(
+      `SELECT id FROM reports
+       WHERE user_id = $1 AND credits_awarded_to_reporter = false
+         AND created_at >= $2 AND is_active = true`,
+      [userId, trip.started_at]
+    );
+    for (const r of uncreditedRes.rows) {
+      await awardCredits(userId, 1, 'earn', 'Reporte sin confirmar — viaje finalizado');
+      await pool.query(
+        `UPDATE reports SET credits_awarded_to_reporter = true WHERE id = $1`,
+        [r.id]
+      );
+    }
+
     await awardCredits(userId, 10, 'earn', 'Viaje completado');
 
     const updated = await pool.query(

@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { routesApi, tripsApi, reportsApi, usersApi, creditsApi } from '../services/api';
 import type { ReportType } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { getSocket } from '../services/socket';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -51,6 +52,29 @@ interface Props {
   onTripEnd?: () => void;
 }
 
+interface RouteReport {
+  id: number;
+  user_id: number;
+  type: ReportType;
+  description: string | null;
+  confirmations: number;
+  confirmed_by_me: boolean;
+  credits_awarded_to_reporter: boolean;
+  active_users: number;
+  needed_confirmations: number;
+  is_valid: boolean;
+  created_at: string;
+}
+
+const REPORT_TYPE_LABEL: Record<string, { emoji: string; label: string }> = {
+  desvio:         { emoji: '🔀', label: 'Desvío' },
+  trancon:        { emoji: '🚦', label: 'Trancón' },
+  lleno:          { emoji: '🔴', label: 'Bus lleno' },
+  bus_disponible: { emoji: '🟢', label: 'Hay sillas' },
+  sin_parar:      { emoji: '🚫', label: 'No paró' },
+  espera:         { emoji: '⏱️', label: 'Larga espera' },
+};
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const QUICK_REPORTS: { type: ReportType; emoji: string; label: string; credits: number }[] = [
@@ -58,18 +82,14 @@ const QUICK_REPORTS: { type: ReportType; emoji: string; label: string; credits: 
   { type: 'trancon', emoji: '🚦', label: 'Trancón', credits: 4 },
 ];
 
-const OCCUPANCY_FULL_REPORTS: { type: ReportType; emoji: string; label: string; credits: number }[] = [
-  { type: 'casi_lleno',    emoji: '🟡', label: 'Casi lleno',  credits: 3 },
-  { type: 'lleno',         emoji: '🔴', label: 'Bus lleno',   credits: 3 },
+const OCCUPANCY_REPORTS: { type: ReportType; emoji: string; label: string; credits: number }[] = [
+  { type: 'lleno',          emoji: '🔴', label: 'Bus lleno',   credits: 3 },
+  { type: 'bus_disponible', emoji: '🟢', label: 'Hay sillas',  credits: 3 },
 ];
 
-const OCCUPANCY_FREE_REPORT: { type: ReportType; emoji: string; label: string; credits: number } =
-  { type: 'bus_disponible', emoji: '🟢', label: 'Se desocupó', credits: 0 };
-
 const OCCUPANCY_STATE_LABEL: Record<string, { emoji: string; label: string; color: string }> = {
-  lleno:      { emoji: '🔴', label: 'Bus lleno',      color: 'bg-red-100 text-red-700 border-red-200' },
-  casi_lleno: { emoji: '🟡', label: 'Casi lleno',     color: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
-  disponible: { emoji: '🟢', label: 'Hay sillas',     color: 'bg-green-100 text-green-700 border-green-200' },
+  lleno:      { emoji: '🔴', label: 'Bus lleno',  color: 'bg-red-100 text-red-700 border-red-200' },
+  disponible: { emoji: '🟢', label: 'Hay sillas', color: 'bg-green-100 text-green-700 border-green-200' },
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -142,11 +162,15 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
   const [summaryData, setSummaryData] = useState<SummaryData | null>(null);
 
   // Ocupación
-  const [occupancyState, setOccupancyState] = useState<'lleno' | 'casi_lleno' | 'disponible' | null>(null);
-  const [userLastOccupancy, setUserLastOccupancy] = useState<'lleno' | 'casi_lleno' | 'bus_disponible' | null>(null);
+  const [occupancyState, setOccupancyState] = useState<'lleno' | 'disponible' | null>(null);
+  const [userLastOccupancy, setUserLastOccupancy] = useState<'lleno' | 'bus_disponible' | null>(null);
   const [occupancyCooldownEnd, setOccupancyCooldownEnd] = useState<number | null>(null);
   // Mapa de ocupación por ruta (para lista y Cerca de ti)
-  const [routeOccupancy, setRouteOccupancy] = useState<Record<number, 'lleno' | 'casi_lleno' | 'disponible'>>({});
+  const [routeOccupancy, setRouteOccupancy] = useState<Record<number, 'lleno' | 'disponible'>>({});
+
+  // Reportes de otros en la misma ruta
+  const [routeReports, setRouteReports] = useState<RouteReport[]>([]);
+  const [confirmCreditsEarned, setConfirmCreditsEarned] = useState(0);
 
   // Toast: keyed to auto-dismiss the correct one
   const [toast, setToast] = useState<{ msg: string; id: number } | null>(null);
@@ -155,7 +179,8 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
   const userPositionRef = useRef<[number, number] | null>(null);
   const lastGpsRef = useRef<number>(Date.now());
   const trafficReportRef = useRef<{ reportId: number; lat: number; lng: number } | null>(null);
-  const occupancyReportRef = useRef<number | null>(null); // ID del último reporte lleno/casi_lleno
+  const occupancyReportRef = useRef<number | null>(null); // ID del último reporte lleno
+  const occupancyCreditedRef = useRef<Set<ReportType>>(new Set()); // tipos que ya ganaron crédito este viaje
   const monitor1Ref = useRef<ReturnType<typeof setInterval> | null>(null);
   const monitor2Ref = useRef<ReturnType<typeof setInterval> | null>(null);
   const outOfRouteSecondsRef = useRef<number>(0);
@@ -217,7 +242,7 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
         const results = await Promise.allSettled(
           routes.map((r) => reportsApi.getOccupancy(r.id).then((o) => ({ id: r.id, state: o.data.state })))
         );
-        const map: Record<number, 'lleno' | 'casi_lleno' | 'disponible'> = {};
+        const map: Record<number, 'lleno' | 'disponible'> = {};
         for (const r of results) {
           if (r.status === 'fulfilled' && r.value.state) {
             map[r.value.id] = r.value.state;
@@ -505,6 +530,53 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Socket: reportes en tiempo real de la ruta ────────────────────────
+  useEffect(() => {
+    if (!activeTrip?.route_id) return;
+    const routeId = activeTrip.route_id;
+    const socket = getSocket();
+
+    socket.emit('join:route', routeId);
+
+    // Cargar reportes existentes de la ruta
+    reportsApi.getRouteReports(routeId)
+      .then((r) => setRouteReports(r.data.reports ?? []))
+      .catch(() => {});
+
+    const onNewReport = (data: { report: RouteReport }) => {
+      if (data.report.user_id === user?.id) return; // skip own reports
+      setRouteReports((prev) => [data.report, ...prev]);
+      showToast('📋 Nuevo reporte en tu ruta');
+    };
+
+    const onReportConfirmed = (data: {
+      reportId: number;
+      confirmations: number;
+      is_valid: boolean;
+      needed_confirmations: number;
+    }) => {
+      setRouteReports((prev) =>
+        prev.map((r) =>
+          r.id === data.reportId
+            ? { ...r, confirmations: data.confirmations, is_valid: data.is_valid, needed_confirmations: data.needed_confirmations }
+            : r
+        )
+      );
+    };
+
+    socket.on('route:new_report', onNewReport);
+    socket.on('route:report_confirmed', onReportConfirmed);
+
+    return () => {
+      socket.emit('leave:route', routeId);
+      socket.off('route:new_report', onNewReport);
+      socket.off('route:report_confirmed', onReportConfirmed);
+      setRouteReports([]);
+      setConfirmCreditsEarned(0);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTrip?.route_id]);
+
   // ── Favorites toggle ──────────────────────────────────────────────────
   const toggleFavorite = async (e: React.MouseEvent, routeId: number) => {
     e.stopPropagation();
@@ -591,6 +663,7 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
       setActiveTrip(trip);
       setCreditsThisTrip(0);
       setElapsed(0);
+      occupancyCreditedRef.current = new Set();
       onTripChange(true);
       onRouteGeometry?.(selectedRoute?.geometry ?? null);
       onBoardingStop?.(null);
@@ -636,6 +709,7 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
         reportsApi.resolve(trafficReportRef.current.reportId).catch(() => {});
         trafficReportRef.current = null;
       }
+      occupancyCreditedRef.current = new Set();
       if (occupancyReportRef.current) {
         reportsApi.resolve(occupancyReportRef.current).catch(() => {});
         occupancyReportRef.current = null;
@@ -657,7 +731,8 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
     if (!pos) { showToast('Sin GPS para reportar'); return; }
 
     // Cooldown client-side para tipos de ocupación
-    const isOccupancy = ['lleno', 'casi_lleno', 'bus_disponible'].includes(type);
+    const isOccupancy = ['lleno', 'bus_disponible'].includes(type);
+    const effectiveCredits = isOccupancy && occupancyCreditedRef.current.has(type) ? 0 : credits;
     if (isOccupancy && occupancyCooldownEnd && Date.now() < occupancyCooldownEnd) {
       const remaining = Math.ceil((occupancyCooldownEnd - Date.now()) / 60000);
       showToast(`Espera ${remaining} min antes de reportar ocupación de nuevo`);
@@ -675,13 +750,16 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
       setTimeout(() => setFlashedBtn(null), 2000);
 
       if (isOccupancy) {
-        setUserLastOccupancy(type as 'lleno' | 'casi_lleno' | 'bus_disponible');
+        setUserLastOccupancy(type as 'lleno' | 'bus_disponible');
         setOccupancyCooldownEnd(Date.now() + 10 * 60 * 1000);
+        if (!occupancyCreditedRef.current.has(type)) {
+          occupancyCreditedRef.current.add(type);
+        }
         // Actualizar estado global inmediatamente
         reportsApi.getOccupancy(activeTrip!.route_id!)
           .then((r) => setOccupancyState(r.data.state))
           .catch(() => {});
-        showToast(credits > 0 ? `⚡ +${credits} créditos` : '✅ Estado actualizado');
+        showToast(effectiveCredits > 0 ? `⚡ +${effectiveCredits} créditos` : '✅ Estado actualizado');
       } else {
         showToast(`⚡ +${credits} créditos`);
       }
@@ -696,7 +774,7 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
       }
 
       // Store occupancy report ID to auto-resolve on trip end
-      if (type === 'lleno' || type === 'casi_lleno') {
+      if (type === 'lleno') {
         occupancyReportRef.current = (res.data.report as { id: number })?.id ?? null;
       }
     } catch (err: unknown) {
@@ -709,6 +787,21 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
       } else {
         showToast(msg ?? 'Error al enviar el reporte');
       }
+    }
+  };
+
+  // ── Confirmar reporte de otro usuario ────────────────────────────────
+  const handleConfirmReport = async (reportId: number) => {
+    try {
+      await reportsApi.confirm(reportId);
+      setRouteReports((prev) =>
+        prev.map((r) => r.id === reportId ? { ...r, confirmed_by_me: true, confirmations: r.confirmations + 1 } : r)
+      );
+      setConfirmCreditsEarned((n) => n + 1);
+      showToast('✅ Confirmado · ⚡ +1 crédito');
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } };
+      showToast(e?.response?.data?.message ?? 'Error al confirmar');
     }
   };
 
@@ -977,6 +1070,49 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
           </div>
         )}
 
+        {/* ── Reportes de otros en tu bus ── */}
+        {routeReports.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-xs text-gray-400">Reportes en tu bus</p>
+              {confirmCreditsEarned > 0 && (
+                <span className="text-xs text-green-600 font-semibold">⚡ +{confirmCreditsEarned} confirmados</span>
+              )}
+            </div>
+            <div className="space-y-2">
+              {routeReports.map((report) => {
+                const label = REPORT_TYPE_LABEL[report.type] ?? { emoji: '📍', label: report.type };
+                const validityText = report.is_valid
+                  ? '✅ Válido'
+                  : `${report.confirmations}/${report.needed_confirmations} confirmaciones`;
+                return (
+                  <div key={report.id} className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
+                    <span className="text-xl leading-none">{label.emoji}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-gray-800 leading-tight">{label.label}</p>
+                      <p className={`text-xs leading-tight ${report.is_valid ? 'text-green-600' : 'text-gray-400'}`}>
+                        {validityText}
+                      </p>
+                    </div>
+                    {!report.confirmed_by_me && confirmCreditsEarned < 3 ? (
+                      <button
+                        onClick={() => handleConfirmReport(report.id)}
+                        className="shrink-0 bg-blue-500 hover:bg-blue-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                      >
+                        Confirmar
+                      </button>
+                    ) : (
+                      <span className="shrink-0 text-xs text-gray-400">
+                        {report.confirmed_by_me ? '✓ Confirmado' : '🔒 Límite'}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* ── Quick report grid ── */}
         <div>
           <p className="text-xs text-gray-400 mb-1.5">Reportar incidencia</p>
@@ -997,37 +1133,25 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
               </button>
             ))}
 
-            {/* Botones de ocupación: ocultos si ya usó "Se desocupó" */}
-            {userLastOccupancy !== 'bus_disponible' && (
-              userLastOccupancy === 'lleno' || userLastOccupancy === 'casi_lleno' ? (
-                <button
-                  onClick={() => handleQuickReport(OCCUPANCY_FREE_REPORT.type, OCCUPANCY_FREE_REPORT.credits)}
-                  className={`col-span-2 flex flex-col items-center gap-0.5 py-2.5 rounded-xl text-xs font-medium transition-all duration-200 ${
-                    flashedBtn === 'bus_disponible'
-                      ? 'bg-green-500 text-white scale-95'
-                      : 'bg-green-50 hover:bg-green-100 text-green-700 border border-green-200'
-                  }`}
-                >
-                  <span className="text-xl leading-none">{OCCUPANCY_FREE_REPORT.emoji}</span>
-                  <span className="leading-tight text-center">{OCCUPANCY_FREE_REPORT.label}</span>
-                </button>
-              ) : (
-                OCCUPANCY_FULL_REPORTS.map(({ type, emoji, label, credits }) => (
-                  <button
-                    key={type}
-                    onClick={() => handleQuickReport(type, credits)}
-                    className={`flex flex-col items-center gap-0.5 py-2.5 rounded-xl text-xs font-medium transition-all duration-200 ${
-                      flashedBtn === type
-                        ? 'bg-green-500 text-white scale-95'
-                        : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                    }`}
-                  >
-                    <span className="text-xl leading-none">{emoji}</span>
-                    <span className="leading-tight text-center">{label}</span>
-                  </button>
-                ))
-              )
-            )}
+            {/* Botones de ocupación: lleno y hay sillas */}
+            {OCCUPANCY_REPORTS.map(({ type, emoji, label, credits }) => (
+              <button
+                key={type}
+                onClick={() => handleQuickReport(type, credits)}
+                className={`flex flex-col items-center gap-0.5 py-2.5 rounded-xl text-xs font-medium transition-all duration-200 ${
+                  flashedBtn === type
+                    ? 'bg-green-500 text-white scale-95'
+                    : userLastOccupancy === type
+                    ? type === 'lleno'
+                      ? 'bg-red-100 text-red-700 border border-red-200'
+                      : 'bg-green-100 text-green-700 border border-green-200'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                }`}
+              >
+                <span className="text-xl leading-none">{emoji}</span>
+                <span className="leading-tight text-center">{label}</span>
+              </button>
+            ))}
           </div>
         </div>
 
@@ -1402,7 +1526,7 @@ function RouteRow({
   isFav: boolean;
   onSelect: (r: Route) => void;
   onToggleFav: (e: React.MouseEvent, id: number) => void;
-  occupancy?: 'lleno' | 'casi_lleno' | 'disponible';
+  occupancy?: 'lleno' | 'disponible';
 }) {
   const routeColor = route.color || '#1d4ed8';
 

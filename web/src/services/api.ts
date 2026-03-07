@@ -144,10 +144,10 @@ export const adminApi = {
 
 export type ReportType =
   | 'bus_location' | 'traffic' | 'bus_full' | 'no_service' | 'detour'
-  | 'desvio' | 'trancon' | 'casi_lleno' | 'lleno' | 'sin_parar' | 'espera'
+  | 'desvio' | 'trancon' | 'lleno' | 'sin_parar' | 'espera'
   | 'bus_disponible';
 
-export type OccupancyState = 'lleno' | 'casi_lleno' | 'disponible' | null;
+export type OccupancyState = 'lleno' | 'disponible' | null;
 
 export const reportsApi = {
   getNearby: (lat: number, lng: number, radius = 1) =>
@@ -169,6 +169,9 @@ export const reportsApi = {
 
   getOccupancy: (routeId: number) =>
     api.get(`/api/reports/occupancy/${routeId}`),
+
+  getRouteReports: (routeId: number) =>
+    api.get(`/api/reports/route/${routeId}`),
 };
 
 // ─── Credits ─────────────────────────────────────────────────────────────────

@@ -21,12 +21,11 @@ interface FeedRoute {
   active_users_count: number;
   has_active_users: boolean;
   has_recent_report: boolean;
-  occupancy?: 'lleno' | 'casi_lleno' | 'disponible' | null;
+  occupancy?: 'lleno' | 'disponible' | null;
 }
 
 const OCCUPANCY_BADGE: Record<string, string> = {
   lleno:      '🔴 Bus lleno',
-  casi_lleno: '🟡 Casi lleno',
   disponible: '🟢 Hay sillas',
 };
 
