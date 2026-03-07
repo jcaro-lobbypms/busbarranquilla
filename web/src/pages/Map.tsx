@@ -6,7 +6,7 @@ import BottomSheet, { type SheetState } from '../components/BottomSheet';
 import type { RouteRecommendation } from '../components/RoutePlanner';
 import CatchBusMode from '../components/CatchBusMode';
 import PlanTripMode from '../components/PlanTripMode';
-import { routesApi, stopsApi, tripsApi } from '../services/api';
+import { routesApi, stopsApi, tripsApi, reportsApi } from '../services/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,7 +21,14 @@ interface FeedRoute {
   active_users_count: number;
   has_active_users: boolean;
   has_recent_report: boolean;
+  occupancy?: 'lleno' | 'casi_lleno' | 'disponible' | null;
 }
+
+const OCCUPANCY_BADGE: Record<string, string> = {
+  lleno:      '🔴 Bus lleno',
+  casi_lleno: '🟡 Casi lleno',
+  disponible: '🟢 Hay sillas',
+};
 
 interface FeedStop {
   latitude: number;
@@ -139,7 +146,20 @@ export default function Map() {
     setFeedLoading(true);
     try {
       const res = await routesApi.activeFeed();
-      setFeedRoutes(res.data.routes as FeedRoute[]);
+      const routes = res.data.routes as FeedRoute[];
+      // Enriquecer rutas activas con estado de ocupación
+      const enriched = await Promise.all(
+        routes.map(async (r) => {
+          if (!r.has_active_users) return r;
+          try {
+            const occRes = await reportsApi.getOccupancy(r.id);
+            return { ...r, occupancy: occRes.data.state };
+          } catch {
+            return r;
+          }
+        })
+      );
+      setFeedRoutes(enriched);
     } catch {
       setFeedRoutes([]);
     } finally {
@@ -297,11 +317,18 @@ export default function Map() {
                       </span>
                       <span className="text-sm font-medium text-gray-800 truncate">{route.name}</span>
                     </div>
-                    <p className="text-xs text-green-700 pl-4">
-                      {route.active_users_count > 0
-                        ? `${route.active_users_count} persona${route.active_users_count !== 1 ? 's' : ''} en este bus`
-                        : 'Activo en tiempo real'}
-                    </p>
+                    <div className="flex items-center gap-2 pl-4 flex-wrap">
+                      <p className="text-xs text-green-700">
+                        {route.active_users_count > 0
+                          ? `${route.active_users_count} persona${route.active_users_count !== 1 ? 's' : ''} en este bus`
+                          : 'Activo en tiempo real'}
+                      </p>
+                      {route.occupancy && (
+                        <span className="text-xs font-semibold">
+                          {OCCUPANCY_BADGE[route.occupancy]}
+                        </span>
+                      )}
+                    </div>
                   </button>
                 ))}
               </div>

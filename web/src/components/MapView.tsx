@@ -24,6 +24,7 @@ const REPORT_ICONS: Record<string, string> = {
 interface Report {
   id: number;
   type: string;
+  route_id: number | null;
   latitude: number;
   longitude: number;
   description: string | null;
@@ -673,39 +674,49 @@ export default function MapView({
         selectedRoute={selectedRoute}
       />
 
-      {reports.map((report) => {
-        const icon = L.divIcon({
-          html: `<div class="text-2xl drop-shadow">${REPORT_ICONS[report.type] ?? '📍'}</div>`,
-          className: '',
-          iconSize: [32, 32],
-          iconAnchor: [16, 32],
-        });
+      {selectedRoute && reports
+        .filter(r => {
+          if (r.route_id !== selectedRoute.route.id) return false;
+          const ageMs = Date.now() - new Date(r.created_at).getTime();
+          return ageMs <= 60 * 60 * 1000; // solo últimos 60 min
+        })
+        .map((report) => {
+          const icon = L.divIcon({
+            html: `<div class="text-2xl drop-shadow">${REPORT_ICONS[report.type] ?? '📍'}</div>`,
+            className: '',
+            iconSize: [32, 32],
+            iconAnchor: [16, 32],
+          });
 
-        return (
-          <Marker
-            key={report.id}
-            position={[report.latitude, report.longitude]}
-            icon={icon}
-          >
-            <Popup>
-              <div className="text-sm space-y-1">
-                <p className="font-semibold">
-                  {REPORT_ICONS[report.type]} {report.type.replace('_', ' ')}
-                </p>
-                {report.description && (
-                  <p className="text-gray-600">{report.description}</p>
-                )}
-                <p className="text-gray-400 text-xs">
-                  ✅ {report.confirmations} confirmaciones
-                </p>
-                <p className="text-gray-400 text-xs">
-                  {new Date(report.created_at).toLocaleTimeString('es-CO')}
-                </p>
-              </div>
-            </Popup>
-          </Marker>
-        );
-      })}
+          const ageMs = Date.now() - new Date(report.created_at).getTime();
+          const ageMins = Math.floor(ageMs / 60000);
+          const timeAgo = ageMins < 1 ? 'hace un momento'
+            : ageMins < 60 ? `hace ${ageMins} min`
+            : 'hace 1h';
+
+          return (
+            <Marker
+              key={report.id}
+              position={[report.latitude, report.longitude]}
+              icon={icon}
+            >
+              <Popup>
+                <div className="text-sm space-y-1">
+                  <p className="font-semibold">
+                    {REPORT_ICONS[report.type]} {report.type.replace('_', ' ')}
+                  </p>
+                  {report.description && (
+                    <p className="text-gray-600">{report.description}</p>
+                  )}
+                  <p className="text-gray-400 text-xs">
+                    ✅ {report.confirmations} confirmaciones
+                  </p>
+                  <p className="text-gray-400 text-xs">{timeAgo}</p>
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
     </MapContainer>
     </div>
   );

@@ -249,8 +249,11 @@ export default function PlanTripMode({
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
   const [searchError, setSearchError] = useState('');
   const [nearbyRoutes, setNearbyRoutes] = useState<NearbyRoute[]>([]);
+  const [nearbyLoading, setNearbyLoading] = useState(false);
   const [selectedNearby, setSelectedNearby] = useState<NearbyRoute | null>(null);
   const previewRouteIdRef = useRef<number | null>(null);
+  const nearbyFetchedRef = useRef(false);
+  const originRef = useRef<{ lat: number; lng: number } | null>(null);
 
   // ── Load favorites on mount ────────────────────────────────────────────
   useEffect(() => {
@@ -269,13 +272,38 @@ export default function PlanTripMode({
     }
   }, [userPosition, originIsGps]);
 
-  // ── Fetch nearby routes whenever origin changes ────────────────────────
-  useEffect(() => {
-    if (!origin) return;
-    routesApi.nearby(origin.lat, origin.lng, 0.5)
+  // ── Fetch nearby routes ────────────────────────────────────────────────
+  const fetchNearbyRoutes = (pos: { lat: number; lng: number }) => {
+    setNearbyLoading(true);
+    routesApi.nearby(pos.lat, pos.lng, 0.5)
       .then((res) => setNearbyRoutes(res.data.routes ?? []))
-      .catch(() => {});
-  }, [origin?.lat, origin?.lng]); // eslint-disable-line react-hooks/exhaustive-deps
+      .catch(() => {})
+      .finally(() => setNearbyLoading(false));
+  };
+
+  // Carga inicial GPS: solo la primera vez, no en cada movimiento
+  useEffect(() => {
+    if (!origin || !originIsGps || nearbyFetchedRef.current) return;
+    nearbyFetchedRef.current = true;
+    originRef.current = origin;
+    fetchNearbyRoutes(origin);
+  }, [origin, originIsGps]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Si el origen cambia a manual (dirección escrita o punto en mapa), refetch inmediato
+  useEffect(() => {
+    if (!origin || originIsGps) return;
+    originRef.current = origin;
+    fetchNearbyRoutes(origin);
+  }, [origin?.lat, origin?.lng, originIsGps]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-refresh cada 2 minutos cuando el origen es GPS
+  useEffect(() => {
+    if (!originIsGps) return;
+    const interval = setInterval(() => {
+      if (originRef.current) fetchNearbyRoutes(originRef.current);
+    }, 2 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [originIsGps]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Handle map-picked origin ───────────────────────────────────────────
   useEffect(() => {
@@ -841,9 +869,20 @@ export default function PlanTripMode({
       )}
 
       {/* Buses en tu zona — shown before a destination is set */}
-      {!dest && !planLoading && !searchError && nearbyRoutes.length > 0 && (
+      {!dest && !planLoading && !searchError && (nearbyLoading || nearbyRoutes.length > 0) && (
         <div className="bg-gray-50 border border-gray-100 rounded-2xl p-3 space-y-1">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">🚌 Buses en tu zona</p>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">🚌 Buses en tu zona</p>
+            {originIsGps && (
+              <button
+                onClick={() => { if (originRef.current) fetchNearbyRoutes(originRef.current); }}
+                disabled={nearbyLoading}
+                className="text-xs text-blue-500 disabled:opacity-40 font-medium"
+              >
+                {nearbyLoading ? 'Actualizando...' : '↻ Actualizar'}
+              </button>
+            )}
+          </div>
           {nearbyRoutes.map((r) => {
             const isSelected = selectedNearby?.id === r.id;
             return (

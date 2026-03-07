@@ -144,7 +144,10 @@ export const adminApi = {
 
 export type ReportType =
   | 'bus_location' | 'traffic' | 'bus_full' | 'no_service' | 'detour'
-  | 'desvio' | 'trancon' | 'casi_lleno' | 'lleno' | 'sin_parar' | 'espera';
+  | 'desvio' | 'trancon' | 'casi_lleno' | 'lleno' | 'sin_parar' | 'espera'
+  | 'bus_disponible';
+
+export type OccupancyState = 'lleno' | 'casi_lleno' | 'disponible' | null;
 
 export const reportsApi = {
   getNearby: (lat: number, lng: number, radius = 1) =>
@@ -163,6 +166,9 @@ export const reportsApi = {
 
   resolve: (id: number) =>
     api.patch(`/api/reports/${id}/resolve`),
+
+  getOccupancy: (routeId: number) =>
+    api.get(`/api/reports/occupancy/${routeId}`),
 };
 
 // ─── Credits ─────────────────────────────────────────────────────────────────

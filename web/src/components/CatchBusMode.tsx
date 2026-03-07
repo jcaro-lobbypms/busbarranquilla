@@ -54,11 +54,23 @@ interface Props {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const QUICK_REPORTS: { type: ReportType; emoji: string; label: string; credits: number }[] = [
-  { type: 'desvio',     emoji: '🔀', label: 'Desvío',     credits: 4 },
-  { type: 'trancon',    emoji: '🚦', label: 'Trancón',    credits: 4 },
-  { type: 'casi_lleno', emoji: '🟡', label: 'Casi lleno', credits: 3 },
-  { type: 'lleno',      emoji: '🔴', label: 'Bus lleno',  credits: 3 },
+  { type: 'desvio',  emoji: '🔀', label: 'Desvío',  credits: 4 },
+  { type: 'trancon', emoji: '🚦', label: 'Trancón', credits: 4 },
 ];
+
+const OCCUPANCY_FULL_REPORTS: { type: ReportType; emoji: string; label: string; credits: number }[] = [
+  { type: 'casi_lleno',    emoji: '🟡', label: 'Casi lleno',  credits: 3 },
+  { type: 'lleno',         emoji: '🔴', label: 'Bus lleno',   credits: 3 },
+];
+
+const OCCUPANCY_FREE_REPORT: { type: ReportType; emoji: string; label: string; credits: number } =
+  { type: 'bus_disponible', emoji: '🟢', label: 'Se desocupó', credits: 0 };
+
+const OCCUPANCY_STATE_LABEL: Record<string, { emoji: string; label: string; color: string }> = {
+  lleno:      { emoji: '🔴', label: 'Bus lleno',      color: 'bg-red-100 text-red-700 border-red-200' },
+  casi_lleno: { emoji: '🟡', label: 'Casi lleno',     color: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
+  disponible: { emoji: '🟢', label: 'Hay sillas',     color: 'bg-green-100 text-green-700 border-green-200' },
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -129,6 +141,13 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
   // Post-trip summary
   const [summaryData, setSummaryData] = useState<SummaryData | null>(null);
 
+  // Ocupación
+  const [occupancyState, setOccupancyState] = useState<'lleno' | 'casi_lleno' | 'disponible' | null>(null);
+  const [userLastOccupancy, setUserLastOccupancy] = useState<'lleno' | 'casi_lleno' | 'bus_disponible' | null>(null);
+  const [occupancyCooldownEnd, setOccupancyCooldownEnd] = useState<number | null>(null);
+  // Mapa de ocupación por ruta (para lista y Cerca de ti)
+  const [routeOccupancy, setRouteOccupancy] = useState<Record<number, 'lleno' | 'casi_lleno' | 'disponible'>>({});
+
   // Toast: keyed to auto-dismiss the correct one
   const [toast, setToast] = useState<{ msg: string; id: number } | null>(null);
 
@@ -136,6 +155,7 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
   const userPositionRef = useRef<[number, number] | null>(null);
   const lastGpsRef = useRef<number>(Date.now());
   const trafficReportRef = useRef<{ reportId: number; lat: number; lng: number } | null>(null);
+  const occupancyReportRef = useRef<number | null>(null); // ID del último reporte lleno/casi_lleno
   const monitor1Ref = useRef<ReturnType<typeof setInterval> | null>(null);
   const monitor2Ref = useRef<ReturnType<typeof setInterval> | null>(null);
   const outOfRouteSecondsRef = useRef<number>(0);
@@ -161,6 +181,21 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
     onRouteGeometry?.(route?.geometry ?? null);
   }, [activeTrip, routes]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Polling de ocupación cada 2 min mientras hay viaje activo ──────────
+  useEffect(() => {
+    if (!activeTrip?.route_id) { setOccupancyState(null); return; }
+    const fetch = () => {
+      reportsApi.getOccupancy(activeTrip.route_id!)
+        .then((r) => setOccupancyState(r.data.state))
+        .catch(() => {});
+    };
+    fetch();
+    const interval = setInterval(fetch, 120_000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTrip?.route_id]);
+
+
   // ── Keep userPositionRef in sync ───────────────────────────────────────
   useEffect(() => {
     userPositionRef.current = userPosition;
@@ -170,15 +205,46 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
     }
   }, [userPosition]);
 
-  // ── Fetch nearby routes when user position is known ────────────────────
-  useEffect(() => {
-    if (!userPosition) return;
+  // ── Fetch nearby routes + ocupación (solo al montar o manual/cada 2 min) ──
+  const nearbyFetchedRef = useRef(false);
+
+  const fetchNearbyRoutes = (pos: [number, number]) => {
     setNearbyLoading(true);
-    routesApi.nearby(userPosition[0], userPosition[1], 0.5)
-      .then((res) => setNearbyRoutes(res.data.routes ?? []))
+    routesApi.nearby(pos[0], pos[1], 0.5)
+      .then(async (res) => {
+        const routes: Route[] = res.data.routes ?? [];
+        setNearbyRoutes(routes);
+        const results = await Promise.allSettled(
+          routes.map((r) => reportsApi.getOccupancy(r.id).then((o) => ({ id: r.id, state: o.data.state })))
+        );
+        const map: Record<number, 'lleno' | 'casi_lleno' | 'disponible'> = {};
+        for (const r of results) {
+          if (r.status === 'fulfilled' && r.value.state) {
+            map[r.value.id] = r.value.state;
+          }
+        }
+        setRouteOccupancy((prev) => ({ ...prev, ...map }));
+      })
       .catch(() => setNearbyRoutes([]))
       .finally(() => setNearbyLoading(false));
-  }, [userPosition]);
+  };
+
+  // Carga inicial: espera hasta tener posición, luego no vuelve a dispararse por movimiento
+  useEffect(() => {
+    if (!userPosition || nearbyFetchedRef.current) return;
+    nearbyFetchedRef.current = true;
+    fetchNearbyRoutes(userPosition);
+  }, [userPosition]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-refresh cada 2 minutos (solo en vista de lista)
+  useEffect(() => {
+    if (view !== 'list') return;
+    const interval = setInterval(() => {
+      const pos = userPositionRef.current;
+      if (pos) fetchNearbyRoutes(pos);
+    }, 2 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Monitor 1: auto-resolver trancón si el bus se movió >200m ─────────
   useEffect(() => {
@@ -565,7 +631,15 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
       setDropoffBanner(null);
       setShowEndConfirm(false);
       setActiveTrip(null);
-      trafficReportRef.current = null;
+      // Auto-resolver reportes activos al bajarse del bus
+      if (trafficReportRef.current) {
+        reportsApi.resolve(trafficReportRef.current.reportId).catch(() => {});
+        trafficReportRef.current = null;
+      }
+      if (occupancyReportRef.current) {
+        reportsApi.resolve(occupancyReportRef.current).catch(() => {});
+        occupancyReportRef.current = null;
+      }
       onTripChange(false);
       onRouteGeometry?.(null);
       setView('summary');
@@ -581,6 +655,15 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
   const handleQuickReport = async (type: ReportType, credits: number) => {
     const pos = userPositionRef.current;
     if (!pos) { showToast('Sin GPS para reportar'); return; }
+
+    // Cooldown client-side para tipos de ocupación
+    const isOccupancy = ['lleno', 'casi_lleno', 'bus_disponible'].includes(type);
+    if (isOccupancy && occupancyCooldownEnd && Date.now() < occupancyCooldownEnd) {
+      const remaining = Math.ceil((occupancyCooldownEnd - Date.now()) / 60000);
+      showToast(`Espera ${remaining} min antes de reportar ocupación de nuevo`);
+      return;
+    }
+
     try {
       const res = await reportsApi.create({
         route_id: activeTrip?.route_id ?? undefined,
@@ -588,10 +671,21 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
         latitude: pos[0],
         longitude: pos[1],
       });
-      // Flash button green for 2s
       setFlashedBtn(type);
       setTimeout(() => setFlashedBtn(null), 2000);
-      showToast(`⚡ +${credits} créditos`);
+
+      if (isOccupancy) {
+        setUserLastOccupancy(type as 'lleno' | 'casi_lleno' | 'bus_disponible');
+        setOccupancyCooldownEnd(Date.now() + 10 * 60 * 1000);
+        // Actualizar estado global inmediatamente
+        reportsApi.getOccupancy(activeTrip!.route_id!)
+          .then((r) => setOccupancyState(r.data.state))
+          .catch(() => {});
+        showToast(credits > 0 ? `⚡ +${credits} créditos` : '✅ Estado actualizado');
+      } else {
+        showToast(`⚡ +${credits} créditos`);
+      }
+
       // Store traffic jam report for background monitor (Monitor 1)
       if (type === 'trancon') {
         trafficReportRef.current = {
@@ -600,8 +694,21 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
           lng: pos[1],
         };
       }
-    } catch {
-      showToast('Error al enviar el reporte');
+
+      // Store occupancy report ID to auto-resolve on trip end
+      if (type === 'lleno' || type === 'casi_lleno') {
+        occupancyReportRef.current = (res.data.report as { id: number })?.id ?? null;
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string; retry_in_minutes?: number } } };
+      const msg = e?.response?.data?.message;
+      const retryIn = e?.response?.data?.retry_in_minutes;
+      if (retryIn) {
+        setOccupancyCooldownEnd(Date.now() + retryIn * 60 * 1000);
+        showToast(msg ?? `Espera ${retryIn} min antes de reportar de nuevo`);
+      } else {
+        showToast(msg ?? 'Error al enviar el reporte');
+      }
     }
   };
 
@@ -862,10 +969,19 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
           </div>
         )}
 
-        {/* ── Quick report grid (4 icons) ── */}
+        {/* ── Estado de ocupación global ── */}
+        {occupancyState && (
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold ${OCCUPANCY_STATE_LABEL[occupancyState].color}`}>
+            <span>{OCCUPANCY_STATE_LABEL[occupancyState].emoji}</span>
+            <span>Estado actual: {OCCUPANCY_STATE_LABEL[occupancyState].label}</span>
+          </div>
+        )}
+
+        {/* ── Quick report grid ── */}
         <div>
           <p className="text-xs text-gray-400 mb-1.5">Reportar incidencia</p>
           <div className="grid grid-cols-4 gap-1.5">
+            {/* Botones fijos: desvío y trancón */}
             {QUICK_REPORTS.map(({ type, emoji, label, credits }) => (
               <button
                 key={type}
@@ -880,6 +996,38 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
                 <span className="leading-tight text-center">{label}</span>
               </button>
             ))}
+
+            {/* Botones de ocupación: ocultos si ya usó "Se desocupó" */}
+            {userLastOccupancy !== 'bus_disponible' && (
+              userLastOccupancy === 'lleno' || userLastOccupancy === 'casi_lleno' ? (
+                <button
+                  onClick={() => handleQuickReport(OCCUPANCY_FREE_REPORT.type, OCCUPANCY_FREE_REPORT.credits)}
+                  className={`col-span-2 flex flex-col items-center gap-0.5 py-2.5 rounded-xl text-xs font-medium transition-all duration-200 ${
+                    flashedBtn === 'bus_disponible'
+                      ? 'bg-green-500 text-white scale-95'
+                      : 'bg-green-50 hover:bg-green-100 text-green-700 border border-green-200'
+                  }`}
+                >
+                  <span className="text-xl leading-none">{OCCUPANCY_FREE_REPORT.emoji}</span>
+                  <span className="leading-tight text-center">{OCCUPANCY_FREE_REPORT.label}</span>
+                </button>
+              ) : (
+                OCCUPANCY_FULL_REPORTS.map(({ type, emoji, label, credits }) => (
+                  <button
+                    key={type}
+                    onClick={() => handleQuickReport(type, credits)}
+                    className={`flex flex-col items-center gap-0.5 py-2.5 rounded-xl text-xs font-medium transition-all duration-200 ${
+                      flashedBtn === type
+                        ? 'bg-green-500 text-white scale-95'
+                        : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                    }`}
+                  >
+                    <span className="text-xl leading-none">{emoji}</span>
+                    <span className="leading-tight text-center">{label}</span>
+                  </button>
+                ))
+              )
+            )}
           </div>
         </div>
 
@@ -1086,7 +1234,16 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
       {/* Cerca de ti */}
       {(nearbyLoading || nearbyRoutes.length > 0) && (
         <div>
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">📍 Cerca de ti</p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">📍 Cerca de ti</p>
+            <button
+              onClick={() => { if (userPositionRef.current) fetchNearbyRoutes(userPositionRef.current); }}
+              disabled={nearbyLoading}
+              className="text-xs text-blue-500 disabled:opacity-40 font-medium"
+            >
+              {nearbyLoading ? 'Actualizando...' : '↻ Actualizar'}
+            </button>
+          </div>
           <div className="flex gap-2 overflow-x-auto pb-1">
             {nearbyLoading
               ? [0, 1, 2].map((i) => (
@@ -1104,13 +1261,18 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
                     <span className="text-[10px] text-gray-500 truncate w-full text-left leading-tight">
                       {r.name}
                     </span>
-                    <div className="flex items-center gap-1.5 mt-0.5">
+                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                       <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">
                         {r.code}
                       </span>
                       {r.min_distance !== undefined && (
                         <span className="text-[10px] text-gray-400">
                           {Math.round(r.min_distance * 1000)} m
+                        </span>
+                      )}
+                      {routeOccupancy[r.id] && (
+                        <span className="text-[10px] font-semibold">
+                          {OCCUPANCY_STATE_LABEL[routeOccupancy[r.id]].emoji}
                         </span>
                       )}
                     </div>
@@ -1168,6 +1330,7 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
                     isFav={true}
                     onSelect={handleSelectRoute}
                     onToggleFav={toggleFavorite}
+                    occupancy={routeOccupancy[r.id]}
                   />
                 ))}
               </div>
@@ -1187,6 +1350,7 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
                     isFav={false}
                     onSelect={handleSelectRoute}
                     onToggleFav={toggleFavorite}
+                    occupancy={routeOccupancy[r.id]}
                   />
                 ))}
               </div>
@@ -1208,6 +1372,7 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
                       isFav={false}
                       onSelect={handleSelectRoute}
                       onToggleFav={toggleFavorite}
+                      occupancy={routeOccupancy[r.id]}
                     />
                   ))}
                 </div>
@@ -1231,11 +1396,13 @@ function RouteRow({
   isFav,
   onSelect,
   onToggleFav,
+  occupancy,
 }: {
   route: Route;
   isFav: boolean;
   onSelect: (r: Route) => void;
   onToggleFav: (e: React.MouseEvent, id: number) => void;
+  occupancy?: 'lleno' | 'casi_lleno' | 'disponible';
 }) {
   const routeColor = route.color || '#1d4ed8';
 
@@ -1244,12 +1411,10 @@ function RouteRow({
       onClick={() => onSelect(route)}
       className="w-full flex items-center gap-2.5 px-3 py-2.5 bg-white border border-gray-100 rounded-xl hover:bg-blue-50 hover:border-blue-100 transition-colors text-left cursor-pointer"
     >
-      {/* Color dot */}
       <div
         className="w-3 h-3 rounded-full shrink-0 border border-black/10"
         style={{ backgroundColor: routeColor }}
       />
-      {/* Code badge with route color */}
       <span
         className="text-white text-xs font-bold px-2 py-0.5 rounded-md shrink-0"
         style={{ backgroundColor: routeColor }}
@@ -1260,9 +1425,16 @@ function RouteRow({
         <p className="text-sm font-medium text-gray-800 truncate">
           {route.company_name ?? route.name}
         </p>
-        {route.frequency_minutes && (
-          <p className="text-xs text-gray-400">Cada {route.frequency_minutes} min</p>
-        )}
+        <div className="flex items-center gap-1.5">
+          {route.frequency_minutes && (
+            <p className="text-xs text-gray-400">Cada {route.frequency_minutes} min</p>
+          )}
+          {occupancy && (
+            <span className="text-xs font-semibold">
+              {OCCUPANCY_STATE_LABEL[occupancy].emoji} {OCCUPANCY_STATE_LABEL[occupancy].label}
+            </span>
+          )}
+        </div>
       </div>
       <button
         onClick={(e) => onToggleFav(e, route.id)}
