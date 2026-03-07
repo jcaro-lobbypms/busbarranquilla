@@ -6,7 +6,7 @@ import BottomSheet, { type SheetState } from '../components/BottomSheet';
 import type { RouteRecommendation } from '../components/RoutePlanner';
 import CatchBusMode from '../components/CatchBusMode';
 import PlanTripMode from '../components/PlanTripMode';
-import { routesApi, stopsApi } from '../services/api';
+import { routesApi, stopsApi, tripsApi } from '../services/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -66,6 +66,8 @@ export default function Map() {
   // Bottom sheet
   const [sheetState, setSheetState] = useState<SheetState>('collapsed');
   const [sheetMode, setSheetMode] = useState<'feed' | 'trip' | 'planner'>('feed');
+  const sheetModeRef = useRef(sheetMode);
+  useEffect(() => { sheetModeRef.current = sheetMode; }, [sheetMode]);
 
   // Activity feed
   const [feedRoutes, setFeedRoutes] = useState<FeedRoute[]>([]);
@@ -76,6 +78,9 @@ export default function Map() {
   const [catchBusBoardingStop, setCatchBusBoardingStop] = useState<{
     latitude: number; longitude: number; name: string;
   } | null>(null);
+
+  // Route ID to auto-board from planner
+  const [pendingBoardRouteId, setPendingBoardRouteId] = useState<number | undefined>(undefined);
 
   // Plan mode map state
   const [planOrigin, setPlanOrigin] = useState<{ lat: number; lng: number } | null>(null);
@@ -99,6 +104,29 @@ export default function Map() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showCreditsPopup]);
+
+  // ── On mount: open trip view if active trip, else show guide if no GPS ───
+  useEffect(() => {
+    if (!user) return;
+    tripsApi.getCurrent()
+      .then((r) => {
+        if (r.data.trip) {
+          setSheetMode('trip');
+          setSheetState('middle');
+        } else if (gpsState !== 'granted') {
+          setSheetState('middle');
+        }
+      })
+      .catch(() => {
+        if (gpsState !== 'granted') setSheetState('middle');
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Clear map click when sheet opens ──────────────────────────────────────
+  useEffect(() => {
+    if (sheetState !== 'collapsed') setClickedPos(null);
+  }, [sheetState]);
 
   // ── Load feed when sheet opens in feed mode ────────────────────────────────
   useEffect(() => {
@@ -162,29 +190,46 @@ export default function Map() {
   }
 
   // ── Sheet actions bar ──────────────────────────────────────────────────────
+  const tripSheetOpen = isOnTrip && sheetMode === 'trip' && sheetState !== 'collapsed';
+  const plannerActive = sheetMode === 'planner';
+
   const actionsBar = isOnTrip ? (
     <button
-      onClick={() => { setSheetMode('trip'); setSheetState('middle'); }}
+      onClick={() => {
+        if (tripSheetOpen) {
+          setSheetState('collapsed');
+        } else {
+          setSheetMode('trip');
+          setSheetState('middle');
+        }
+      }}
       className="w-full h-10 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-xl text-sm flex items-center justify-center gap-2 transition-colors"
     >
-      🚌 Viaje en curso →
+      {tripSheetOpen ? '🗺️ Ver mapa' : '🚌 Viaje en curso →'}
     </button>
-  ) : (
+  ) : plannerActive && sheetState === 'collapsed' ? (
+    <button
+      onClick={() => setSheetState('middle')}
+      className="w-full h-10 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-sm transition-colors"
+    >
+      🗺️ Continuar planeando
+    </button>
+  ) : sheetMode === 'feed' ? (
     <div className="flex gap-2">
       <button
-        onClick={() => { setSheetMode('trip'); setSheetState('middle'); }}
+        onClick={() => { setSheetMode('trip'); setSheetState('middle'); setClickedPos(null); }}
         className="flex-1 h-10 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-xl text-sm transition-colors"
       >
         🚌 Coger un bus
       </button>
       <button
-        onClick={() => { setSheetMode('planner'); setSheetState('middle'); }}
+        onClick={() => { setSheetMode('planner'); setSheetState('middle'); setClickedPos(null); }}
         className="flex-1 h-10 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-sm transition-colors"
       >
         🗺️ Planear viaje
       </button>
     </div>
-  );
+  ) : null;
 
   // ── Activity feed JSX ──────────────────────────────────────────────────────
   const liveRoutes = feedRoutes.filter((r) => r.has_active_users);
@@ -192,6 +237,36 @@ export default function Map() {
 
   const feedContent = (
     <div className="p-4 space-y-5 pb-4">
+
+      {/* ── Guía contextual cuando GPS no está activo ── */}
+      {gpsState !== 'granted' && (
+        <div className="space-y-2">
+          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-3">
+            <p className="text-sm font-semibold text-gray-900">
+              👋 Bienvenido a MiBus
+            </p>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              Activa tu ubicación para ver rutas cercanas y reportar buses en tiempo real. Tu GPS solo se comparte mientras viajas.
+            </p>
+            <div className="space-y-1.5">
+              <div className="flex items-start gap-2 text-xs text-gray-600">
+                <span className="shrink-0">🚌</span>
+                <span><strong>Coger un bus</strong> — reporta dónde va el bus y gana créditos</span>
+              </div>
+              <div className="flex items-start gap-2 text-xs text-gray-600">
+                <span className="shrink-0">🗺️</span>
+                <span><strong>Planear viaje</strong> — encuentra qué ruta te lleva a tu destino</span>
+              </div>
+            </div>
+          </div>
+          {gpsState === 'denied' && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
+              📍 Sin GPS algunas funciones estarán limitadas, pero puedes explorar rutas y planear viajes.
+            </p>
+          )}
+        </div>
+      )}
+
       {feedLoading ? (
         <div className="flex justify-center py-10">
           <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
@@ -287,21 +362,30 @@ export default function Map() {
       case 'trip':
         return (
           <div className="p-4 space-y-3">
-            <button
-              onClick={() => {
-                setSheetMode('feed');
-                setActiveTripGeometry(null);
-                setCatchBusBoardingStop(null);
-              }}
-              className="text-gray-400 hover:text-gray-700 text-sm flex items-center gap-1 mb-1"
-            >
-              ← Volver
-            </button>
+            {!isOnTrip && (
+              <button
+                onClick={() => {
+                  setSheetMode('feed');
+                  setActiveTripGeometry(null);
+                  setCatchBusBoardingStop(null);
+                  setClickedPos(null);
+                }}
+                className="text-gray-400 hover:text-gray-700 text-sm flex items-center gap-1 mb-1"
+              >
+                ← Volver
+              </button>
+            )}
             <CatchBusMode
               userPosition={userPosition}
               onTripChange={setIsOnTrip}
               onRouteGeometry={setActiveTripGeometry}
               onBoardingStop={setCatchBusBoardingStop}
+              initialRouteId={pendingBoardRouteId}
+              onTripEnd={() => {
+                setSheetMode('feed');
+                setActiveTripGeometry(null);
+                setCatchBusBoardingStop(null);
+              }}
             />
           </div>
         );
@@ -319,6 +403,7 @@ export default function Map() {
                 setMapPickMode('none');
                 setMapPickedOrigin(null);
                 setMapPickedDest(null);
+                setClickedPos(null);
               }}
               className="text-gray-400 hover:text-gray-700 text-sm flex items-center gap-1 mb-3"
             >
@@ -335,10 +420,16 @@ export default function Map() {
                 setSheetState('collapsed');
               }}
               onPlanUpdate={({ origin, dest, routeStops, dropoffStop }) => {
+                if (sheetModeRef.current !== 'planner') return;
                 setPlanOrigin(origin);
                 setPlanDest(dest);
                 setPlanRouteStops(routeStops);
                 setPlanDropoffStop(dropoffStop);
+              }}
+              onBoardRoute={(routeId) => {
+                setPendingBoardRouteId(routeId);
+                setSheetMode('trip');
+                setSheetState('middle');
               }}
             />
           </div>

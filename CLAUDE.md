@@ -425,9 +425,9 @@ Functions: `getUsers`, `updateUserRole`, `toggleUserActive`, `deleteUser`, `getC
 - Route clipping in `handleSelectRoute` falls back to full geometry (then all stops) if segment indices are invalid
 - Removed "Cómo llegar a pie" (Google Maps external link) from waiting view
 
-### Phase 3 — Upcoming
+### Phase 3 ✅ Complete
 - Deploy to Vercel + Railway
-- Connect mibus.co domain
+- Connect mibus.co domain (Vercel → mibus.co, Railway → api.mibus.co)
 - Wompi payments integration
 - Active premium plans
 

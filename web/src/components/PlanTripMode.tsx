@@ -50,6 +50,7 @@ interface Props {
     routeStops: StopForMap[];
     dropoffStop: { latitude: number; longitude: number; name: string } | null;
   }) => void;
+  onBoardRoute?: (routeId: number) => void;
 }
 
 // Reverse geocode a coordinate to a human-readable label
@@ -225,6 +226,7 @@ export default function PlanTripMode({
   mapPickedDest,
   onRequestMapPick,
   onPlanUpdate,
+  onBoardRoute,
 }: Props) {
   // Origin
   const [originQuery, setOriginQuery] = useState('');
@@ -636,6 +638,15 @@ export default function PlanTripMode({
         <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
           ⚠️ El recorrido exacto de la ruta se muestra aproximado. Los horarios pueden variar.
         </p>
+
+        {onBoardRoute && (
+          <button
+            onClick={() => onBoardRoute(selectedRoute.id)}
+            className="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-3 rounded-xl text-sm transition-colors"
+          >
+            🚌 Me subí a este bus
+          </button>
+        )}
       </div>
     );
   }
@@ -831,60 +842,45 @@ export default function PlanTripMode({
 
       {/* Buses en tu zona — shown before a destination is set */}
       {!dest && !planLoading && !searchError && nearbyRoutes.length > 0 && (
-        <div className="bg-gray-50 border border-gray-100 rounded-2xl p-3 space-y-2">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">🚌 Buses en tu zona</p>
-          <div className="space-y-1">
-            {nearbyRoutes.map((r) => {
-              const isSelected = selectedNearby?.id === r.id;
-              return (
+        <div className="bg-gray-50 border border-gray-100 rounded-2xl p-3 space-y-1">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">🚌 Buses en tu zona</p>
+          {nearbyRoutes.map((r) => {
+            const isSelected = selectedNearby?.id === r.id;
+            return (
+              <div key={r.id} className={`rounded-xl border transition-colors ${isSelected ? 'bg-white border-blue-200' : 'border-transparent'}`}>
                 <button
-                  key={r.id}
                   onClick={() => handleNearbyPreview(r)}
-                  className={`w-full flex items-center justify-between text-sm rounded-xl px-2 py-1.5 transition-colors ${
-                    isSelected
-                      ? 'bg-blue-50 border border-blue-200'
-                      : 'hover:bg-gray-100 border border-transparent'
+                  className={`w-full flex items-center justify-between text-sm px-2 py-1.5 rounded-xl transition-colors ${
+                    isSelected ? 'text-blue-900' : 'hover:bg-gray-100 text-gray-800'
                   }`}
                 >
-                  <div className="flex flex-col items-start min-w-0 flex-1">
-                    <span className={`font-semibold truncate w-full text-left leading-tight ${isSelected ? 'text-blue-900' : 'text-gray-800'}`}>
-                      {r.company_name ?? r.name}
-                    </span>
-                  </div>
+                  <span className={`font-semibold truncate text-left leading-tight`}>
+                    {r.company_name ?? r.name}
+                  </span>
                   <div className="flex items-center gap-1.5 shrink-0 ml-2">
                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isSelected ? 'bg-blue-200 text-blue-800' : 'bg-blue-100 text-blue-700'}`}>
                       {r.code}
                     </span>
-                    <span className="text-xs text-gray-400">
-                      {Math.round(r.min_distance * 1000)} m
-                    </span>
+                    <span className="text-xs text-gray-400">{Math.round(r.min_distance * 1000)} m</span>
                   </div>
                 </button>
-              );
-            })}
-          </div>
 
-          {/* Mini info bar when a route is selected */}
-          {selectedNearby ? (
-            <div className="flex items-center justify-between bg-blue-600 text-white rounded-xl px-3 py-2 mt-1">
-              <p className="text-xs">
-                <span className="font-bold">{selectedNearby.company_name ?? selectedNearby.name}</span>
-                {' '}<span className="opacity-75">{selectedNearby.code}</span>
-                {' — '}¿Va a tu destino? Escríbelo arriba ↑
-              </p>
-              <button
-                onClick={() => {
-                  setSelectedNearby(null);
-                  onPlanUpdate({ origin, dest: null, routeStops: [], dropoffStop: null });
-                }}
-                className="ml-2 text-white/70 hover:text-white text-sm leading-none"
-              >
-                ✕
-              </button>
-            </div>
-          ) : (
-            <p className="text-xs text-gray-400">Toca una ruta para verla en el mapa.</p>
-          )}
+                {isSelected && (
+                  <div className="px-2 pb-2 space-y-1.5">
+                    <p className="text-xs text-gray-500">¿Va a tu destino? Escríbelo arriba ↑</p>
+                    {onBoardRoute && (
+                      <button
+                        onClick={() => onBoardRoute(r.id)}
+                        className="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-2 rounded-lg text-sm transition-colors"
+                      >
+                        🚌 Me subí a este bus
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

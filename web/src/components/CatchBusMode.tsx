@@ -47,6 +47,8 @@ interface Props {
   onTripChange: (active: boolean) => void;
   onRouteGeometry?: (geom: [number, number][] | null) => void;
   onBoardingStop?: (stop: { latitude: number; longitude: number; name: string } | null) => void;
+  initialRouteId?: number;
+  onTripEnd?: () => void;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -88,7 +90,7 @@ function fmtTime(secs: number): string {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function CatchBusMode({ userPosition, onTripChange, onRouteGeometry, onBoardingStop }: Props) {
+export default function CatchBusMode({ userPosition, onTripChange, onRouteGeometry, onBoardingStop, initialRouteId, onTripEnd }: Props) {
   const { user } = useAuth();
 
   // Route list
@@ -494,6 +496,19 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
     }).catch(() => {});
   }, [onRouteGeometry, onBoardingStop]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Auto-select route from planner if initialRouteId provided ─────────
+  // Only runs from 'list' view — never overrides an active trip detection
+  const initialRouteIdRef = useRef(initialRouteId);
+  useEffect(() => {
+    if (!initialRouteIdRef.current || loading || routes.length === 0 || view !== 'list') return;
+    const route = routes.find((r) => r.id === initialRouteIdRef.current);
+    if (route) {
+      initialRouteIdRef.current = undefined;
+      handleSelectRoute(route);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routes, loading, view]);
+
   // ── Trip start ────────────────────────────────────────────────────────
   const handleStart = async () => {
     if (!selectedRoute) return;
@@ -520,6 +535,7 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
       setView('active');
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } } };
+      setShowBoardConfirm(false);
       showToast(e?.response?.data?.message ?? 'Error al iniciar el viaje');
     } finally {
       setTripLoading(false);
@@ -674,7 +690,7 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
           {(['😊 Bien', '😐 Regular', '😞 Mal'] as const).map((label) => (
             <button
               key={label}
-              onClick={() => { setSummaryData(null); setSearch(''); setView('list'); }}
+              onClick={() => { setSummaryData(null); setSearch(''); setView('list'); onTripEnd?.(); }}
               className="flex-1 border border-gray-200 text-gray-700 font-medium py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors"
             >
               {label}
