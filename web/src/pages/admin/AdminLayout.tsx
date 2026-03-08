@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { NavLink, Link, Outlet } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
@@ -10,11 +11,13 @@ const navItems = [
 
 export default function AdminLayout() {
   const { user } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <div className="flex h-screen">
-      {/* Sidebar */}
-      <aside className="w-60 bg-gray-900 text-gray-100 flex flex-col shrink-0">
+
+      {/* ── Sidebar desktop (md+) ── */}
+      <aside className="hidden md:flex w-60 bg-gray-900 text-gray-100 flex-col shrink-0">
         <div className="px-6 py-5 border-b border-gray-700">
           <span className="text-lg font-bold tracking-tight">MiBus Admin</span>
         </div>
@@ -49,10 +52,67 @@ export default function AdminLayout() {
         </div>
       </aside>
 
-      {/* Main content */}
-      <main className="flex-1 bg-gray-50 overflow-y-auto">
-        <Outlet />
-      </main>
+      {/* ── Main content ── */}
+      <div className="flex-1 flex flex-col min-w-0 bg-gray-50">
+
+        {/* ── Top bar mobile (< md) ── */}
+        <header className="md:hidden bg-gray-900 text-gray-100 flex items-center justify-between px-4 py-3 shrink-0">
+          <span className="font-bold tracking-tight">MiBus Admin</span>
+          <button
+            onClick={() => setMenuOpen((o) => !o)}
+            className="p-1.5 rounded-md hover:bg-gray-700 transition-colors"
+            aria-label="Menú"
+          >
+            {menuOpen ? (
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            ) : (
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            )}
+          </button>
+        </header>
+
+        {/* ── Mobile dropdown menu ── */}
+        {menuOpen && (
+          <nav className="md:hidden bg-gray-800 text-gray-100 px-4 py-3 space-y-1 shrink-0">
+            {navItems.map(({ to, label, emoji }) => (
+              <NavLink
+                key={to}
+                to={to}
+                onClick={() => setMenuOpen(false)}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors ${
+                    isActive
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                  }`
+                }
+              >
+                <span>{emoji}</span>
+                {label}
+              </NavLink>
+            ))}
+            <div className="border-t border-gray-700 pt-3 mt-1 space-y-2">
+              <p className="text-xs text-gray-500 px-3">{user?.name}</p>
+              <Link
+                to="/map"
+                onClick={() => setMenuOpen(false)}
+                className="flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+              >
+                ← Volver al mapa
+              </Link>
+            </div>
+          </nav>
+        )}
+
+        {/* ── Page content ── */}
+        <main className="flex-1 overflow-y-auto">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }
