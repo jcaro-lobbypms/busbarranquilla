@@ -304,7 +304,7 @@ export const resolveReport = async (req: Request, res: Response): Promise<void> 
 
 // Confirmar reporte de otro usuario (protegido)
 export const confirmReport = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const id = req.params.id as string;
   const userId = (req as any).userId;
 
   try {
@@ -429,7 +429,7 @@ export const confirmReport = async (req: Request, res: Response): Promise<void> 
 
 // Reportes activos de una ruta (para pasajeros en ese bus)
 export const getRouteReports = async (req: Request, res: Response): Promise<void> => {
-  const routeId = parseInt(req.params.routeId, 10);
+  const routeId = parseInt(req.params.routeId as string, 10);
   const userId = (req as any).userId;
 
   if (isNaN(routeId)) {
