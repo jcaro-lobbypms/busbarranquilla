@@ -21,6 +21,7 @@ interface WompiWebhookBody {
       status?: string;
       amount_in_cents?: number;
       reference?: string;
+      payment_link_id?: string;
     };
   };
   signature?: WompiSignature;
@@ -174,14 +175,17 @@ export const createCheckout = async (req: Request, res: Response): Promise<void>
 
     const paymentLinkData = paymentLinkResponse?.data?.data as { id?: string; url?: string } | undefined;
 
+    // Guardar el ID del payment link de Wompi (es lo que llega en el webhook como payment_link_id)
+    const paymentLinkId = paymentLinkData?.id ?? reference;
+
     await pool.query(
       `INSERT INTO payments (user_id, wompi_reference, plan, amount_cents, status)
        VALUES ($1, $2, $3, $4, 'pending')`,
-      [userId, reference, plan, selectedPlan.amountInCents]
+      [userId, paymentLinkId, plan, selectedPlan.amountInCents]
     );
 
     res.json({
-      checkout_url: paymentLinkData?.url ?? `https://checkout.wompi.co/l/${paymentLinkData?.id ?? ''}`,
+      checkout_url: paymentLinkData?.url ?? `https://checkout.wompi.co/l/${paymentLinkId}`,
     });
   } catch (error) {
     console.error('Error creando checkout en Wompi:', error);
@@ -203,11 +207,11 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
   }
 
   const transaction = body.data?.transaction;
-  const reference = transaction?.reference;
+  const paymentLinkId = transaction?.payment_link_id;
   const transactionStatus = transaction?.status ?? '';
   const transactionId = transaction?.id ?? null;
 
-  if (!reference) {
+  if (!paymentLinkId) {
     res.status(200).json({ received: true });
     return;
   }
@@ -224,7 +228,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
        FROM payments
        WHERE wompi_reference = $1
        FOR UPDATE`,
-      [reference]
+      [paymentLinkId]
     );
 
     if (paymentResult.rows.length === 0) {
