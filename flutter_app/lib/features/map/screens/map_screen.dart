@@ -15,6 +15,7 @@ import '../providers/map_state.dart';
 import '../widgets/active_feed_bar.dart';
 import '../widgets/bus_marker_layer.dart';
 import '../widgets/report_marker_layer.dart';
+import '../widgets/user_marker_layer.dart';
 
 class MapScreen extends ConsumerStatefulWidget {
   const MapScreen({super.key});
@@ -69,6 +70,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 urlTemplate: AppStrings.osmTileUrl,
                 userAgentPackageName: AppStrings.osmUserAgent,
               ),
+              if (ready.userPosition != null) UserMarkerLayer(position: ready.userPosition!),
               if (selectedRoute != null && selectedRoute.geometry.isNotEmpty)
                 RoutePolylineLayer(points: selectedRoute.geometry),
               ReportMarkerLayer(

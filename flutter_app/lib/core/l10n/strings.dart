@@ -36,6 +36,7 @@ abstract final class AppStrings {
   static const tripStartError = 'No se pudo iniciar el viaje';
   static const tripSelectRoute = 'Selecciona una ruta';
   static const tripSearchRouteHint = 'Buscar ruta';
+  static const nearbyTitle = 'Cerca de ti';
   static const tripSelectStopOptional = 'Selecciona una parada de destino (opcional)';
   static const tripStartButton = 'Iniciar viaje';
   static const tripNoStops = 'Esta ruta no tiene paradas registradas';
@@ -60,6 +61,8 @@ abstract final class AppStrings {
   static const plannerPickPointsError = 'Selecciona origen y destino para continuar.';
   static const favoritesTitle = 'Favoritos';
   static const noFavorites = 'Aún no tienes rutas favoritas';
+  static const nearbyRoutesTitle = 'Buses en tu zona';
+  static const nearbyRoutesHint = '¿Va a tu destino? Escríbelo arriba ↑';
   static const distanceOriginLabel = 'origen';
   static const distanceDestLabel = 'destino';
   static const frequencyLabel = 'Frecuencia';
@@ -76,6 +79,13 @@ abstract final class AppStrings {
   static const alightNow = '¡Bájate ya!';
   static const missedStop = 'Pasaste tu parada';
   static const stillOnBus = '¿Sigues en el bus?';
+  static const stillOnBusBody = 'Detectamos que llevas mucho tiempo sin moverte. ¿Todavía estás en el bus?';
+  static const stillOnBusYes = 'Sí, sigo aquí';
+  static const desvioTitle = 'Posible desvío';
+  static const desvioBody = 'Parece que el bus se alejó de la ruta. ¿Qué quieres hacer?';
+  static const desvioReport = 'Reportar desvío';
+  static const desvioGetOff = 'Me bajé';
+  static const desvioIgnore = 'Ignorar 5 min';
 
   static const premiumTitle = 'MiBus Premium';
   static const premiumAlready = '✓ Ya eres Premium';

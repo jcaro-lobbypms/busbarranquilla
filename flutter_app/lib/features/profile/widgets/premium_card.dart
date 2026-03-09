@@ -26,7 +26,7 @@ class PremiumCard extends ConsumerWidget {
         width: double.infinity,
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: AppColors.success.withOpacity(0.08),
+          color: AppColors.success.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: AppColors.success),
         ),
@@ -55,7 +55,7 @@ class PremiumCard extends ConsumerWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.primary.withOpacity(0.08),
+        color: AppColors.primary.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.primary),
       ),

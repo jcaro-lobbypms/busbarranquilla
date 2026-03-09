@@ -124,7 +124,7 @@ class _ProfileReadyView extends ConsumerWidget {
                       '${state.balance}',
                       style: Theme.of(context).textTheme.displaySmall,
                     ),
-                    Text(AppStrings.creditsLabel),
+                    const Text(AppStrings.creditsLabel),
                   ],
                 ),
               ),
@@ -164,7 +164,7 @@ class _Chip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(

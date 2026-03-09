@@ -37,6 +37,69 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
     });
   }
 
+  void _showInactivityDialog() {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text(AppStrings.stillOnBus),
+        content: const Text(AppStrings.stillOnBusBody),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              ref.read(tripNotifierProvider.notifier).markInactivityResponded();
+            },
+            child: const Text(AppStrings.stillOnBusYes),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              ref.read(tripNotifierProvider.notifier).endTrip();
+              if (mounted) context.go('/map');
+            },
+            child: const Text(AppStrings.tripEndButton),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDesvioDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text(AppStrings.desvioTitle),
+        content: const Text(AppStrings.desvioBody),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              ref.read(tripNotifierProvider.notifier).dismissDesvio();
+              await ref.read(tripNotifierProvider.notifier).createReport('desvio');
+            },
+            child: const Text(AppStrings.desvioReport),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              ref.read(tripNotifierProvider.notifier).endTrip();
+              if (mounted) context.go('/map');
+            },
+            child: const Text(AppStrings.desvioGetOff),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              ref.read(tripNotifierProvider.notifier).ignoreDesvio();
+            },
+            child: const Text(AppStrings.desvioIgnore),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _ticker?.cancel();
@@ -60,6 +123,18 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<TripState>(tripNotifierProvider, (previous, next) {
+      if (next is! TripActive) return;
+      final prev = previous is TripActive ? previous : null;
+
+      if (next.showInactivityModal && prev?.showInactivityModal != true) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _showInactivityDialog());
+      }
+      if (next.desvioDetected && prev?.desvioDetected != true) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _showDesvioDialog());
+      }
+    });
+
     final state = ref.watch(tripNotifierProvider);
 
     if (state is TripIdle) {
@@ -112,7 +187,7 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   decoration: BoxDecoration(
-                    color: AppColors.warning.withOpacity(0.15),
+                    color: AppColors.warning.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(

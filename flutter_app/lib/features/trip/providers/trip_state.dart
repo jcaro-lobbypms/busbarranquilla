@@ -23,6 +23,8 @@ final class TripActive extends TripState {
   final List<Stop> stops;
   final List<Report> reports;
   final DropoffAlert? dropoffAlert;
+  final bool showInactivityModal;
+  final bool desvioDetected;
 
   const TripActive({
     required this.trip,
@@ -30,6 +32,8 @@ final class TripActive extends TripState {
     required this.stops,
     required this.reports,
     this.dropoffAlert,
+    this.showInactivityModal = false,
+    this.desvioDetected = false,
   });
 
   TripActive copyWith({
@@ -38,6 +42,8 @@ final class TripActive extends TripState {
     List<Stop>? stops,
     List<Report>? reports,
     DropoffAlert? dropoffAlert,
+    bool? showInactivityModal,
+    bool? desvioDetected,
   }) {
     return TripActive(
       trip: trip ?? this.trip,
@@ -45,6 +51,8 @@ final class TripActive extends TripState {
       stops: stops ?? this.stops,
       reports: reports ?? this.reports,
       dropoffAlert: dropoffAlert ?? this.dropoffAlert,
+      showInactivityModal: showInactivityModal ?? this.showInactivityModal,
+      desvioDetected: desvioDetected ?? this.desvioDetected,
     );
   }
 }

@@ -1,3 +1,4 @@
+import '../../../core/domain/models/bus_route.dart';
 import '../../../core/domain/models/plan_result.dart';
 import '../models/nominatim_result.dart';
 
@@ -8,19 +9,23 @@ sealed class PlannerState {
 final class PlannerIdle extends PlannerState {
   final NominatimResult? selectedOrigin;
   final NominatimResult? selectedDest;
+  final List<BusRoute> nearbyRoutes;
 
   const PlannerIdle({
     this.selectedOrigin,
     this.selectedDest,
+    this.nearbyRoutes = const <BusRoute>[],
   });
 
   PlannerIdle copyWith({
     NominatimResult? selectedOrigin,
     NominatimResult? selectedDest,
+    List<BusRoute>? nearbyRoutes,
   }) {
     return PlannerIdle(
       selectedOrigin: selectedOrigin ?? this.selectedOrigin,
       selectedDest: selectedDest ?? this.selectedDest,
+      nearbyRoutes: nearbyRoutes ?? this.nearbyRoutes,
     );
   }
 }

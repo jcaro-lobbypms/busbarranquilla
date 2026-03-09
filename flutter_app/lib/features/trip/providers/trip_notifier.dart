@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/data/repositories/reports_repository.dart';
@@ -15,6 +16,7 @@ import '../../../core/l10n/strings.dart';
 import '../../../core/location/location_service.dart';
 import '../../../core/socket/socket_service.dart';
 import '../monitors/auto_resolve_monitor.dart';
+import '../monitors/desvio_monitor.dart';
 import '../monitors/dropoff_monitor.dart';
 import '../monitors/inactivity_monitor.dart';
 import 'trip_state.dart';
@@ -24,6 +26,7 @@ class TripNotifier extends Notifier<TripState> {
   DropoffMonitor? _dropoffMonitor;
   InactivityMonitor? _inactivityMonitor;
   AutoResolveMonitor? _autoResolveMonitor;
+  DesvioMonitor? _desvioMonitor;
 
   @override
   TripState build() {
@@ -99,6 +102,7 @@ class TripNotifier extends Notifier<TripState> {
     state = activeState;
 
     ref.read(socketServiceProvider).joinRoute(routeId);
+    _bindSocketRouteListeners(routeId);
     _startLocationBroadcast();
     _startMonitors(activeState, destinationStopId);
   }
@@ -112,12 +116,36 @@ class TripNotifier extends Notifier<TripState> {
     final active = state as TripActive;
 
     _disposeMonitorsAndTimers();
+    final socket = ref.read(socketServiceProvider);
     if (active.trip.routeId != null) {
-      ref.read(socketServiceProvider).leaveRoute(active.trip.routeId!);
+      socket.leaveRoute(active.trip.routeId!);
     }
+    socket.off('route:new_report');
+    socket.off('route:report_confirmed');
 
     await ref.read(tripsRepositoryProvider).end();
     state = const TripIdle();
+  }
+
+  void markInactivityResponded() {
+    _inactivityMonitor?.markResponded();
+    if (state is TripActive) {
+      state = (state as TripActive).copyWith(showInactivityModal: false);
+    }
+  }
+
+  void dismissDesvio() {
+    _desvioMonitor?.resetAlert();
+    if (state is TripActive) {
+      state = (state as TripActive).copyWith(desvioDetected: false);
+    }
+  }
+
+  void ignoreDesvio() {
+    _desvioMonitor?.ignore(const Duration(minutes: 5));
+    if (state is TripActive) {
+      state = (state as TripActive).copyWith(desvioDetected: false);
+    }
   }
 
   Future<void> confirmReport(int reportId) async {
@@ -152,6 +180,15 @@ class TripNotifier extends Notifier<TripState> {
       case Failure<Report>():
         return;
     }
+  }
+
+  void _bindSocketRouteListeners(int routeId) {
+    final socket = ref.read(socketServiceProvider);
+    socket.off('route:new_report');
+    socket.off('route:report_confirmed');
+
+    socket.on('route:new_report', (_) => unawaited(_reloadReports()));
+    socket.on('route:report_confirmed', (_) => unawaited(_reloadReports()));
   }
 
   void _startLocationBroadcast() {
@@ -204,6 +241,7 @@ class TripNotifier extends Notifier<TripState> {
             if (state is! TripActive) return;
             final active = state as TripActive;
             state = active.copyWith(dropoffAlert: DropoffAlert.alight);
+            HapticFeedback.vibrate();
           },
           onMissed: () {
             if (state is! TripActive) return;
@@ -215,7 +253,11 @@ class TripNotifier extends Notifier<TripState> {
     }
 
     _inactivityMonitor = InactivityMonitor(
-      onAsk: () {},
+      onAsk: () {
+        if (state is TripActive) {
+          state = (state as TripActive).copyWith(showInactivityModal: true);
+        }
+      },
       onAutoEnd: () {
         unawaited(endTrip());
       },
@@ -225,6 +267,17 @@ class TripNotifier extends Notifier<TripState> {
       reports: activeState.reports,
       onResolve: (reportId) => _resolveReport(reportId),
     )..start();
+
+    if (activeState.stops.isNotEmpty) {
+      _desvioMonitor = DesvioMonitor(
+        stops: activeState.stops,
+        onDesvio: () {
+          if (state is TripActive) {
+            state = (state as TripActive).copyWith(desvioDetected: true);
+          }
+        },
+      )..start();
+    }
   }
 
   Future<void> _resolveReport(int reportId) async {
@@ -243,9 +296,12 @@ class TripNotifier extends Notifier<TripState> {
     if (reportsResult is Success<List<Report>>) {
       final updatedReports = reportsResult.data;
       state = active.copyWith(reports: updatedReports);
-      _autoResolveMonitor?.reports
-        ..clear()
-        ..addAll(updatedReports);
+      final monitor = _autoResolveMonitor;
+      if (monitor != null) {
+        monitor.reports
+          ..clear()
+          ..addAll(updatedReports);
+      }
     }
   }
 
@@ -258,6 +314,9 @@ class TripNotifier extends Notifier<TripState> {
 
     _autoResolveMonitor?.dispose();
     _autoResolveMonitor = null;
+
+    _desvioMonitor?.dispose();
+    _desvioMonitor = null;
   }
 
   void _disposeMonitorsAndTimers() {

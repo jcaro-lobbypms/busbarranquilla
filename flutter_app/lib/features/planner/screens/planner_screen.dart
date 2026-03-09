@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/domain/models/bus_route.dart';
 import '../../../core/domain/models/plan_result.dart';
 import '../../../core/l10n/strings.dart';
 import '../../../core/location/location_service.dart';
@@ -83,6 +84,10 @@ class _PlannerScreenState extends ConsumerState<PlannerScreen> {
       PlannerResults(selectedDest: final dest) => dest,
       _ => notifier.selectedDest,
     };
+    final nearbyRoutes = switch (state) {
+      PlannerIdle(nearbyRoutes: final routes, selectedDest: null) => routes,
+      _ => const <BusRoute>[],
+    };
 
     final isLoading = state is PlannerLoading;
     final List<PlanResult> results =
@@ -151,6 +156,7 @@ class _PlannerScreenState extends ConsumerState<PlannerScreen> {
                             );
                           },
                         ),
+                  _ => const SizedBox.shrink(),
                 },
               ),
               const SizedBox(height: 12),
@@ -167,6 +173,37 @@ class _PlannerScreenState extends ConsumerState<PlannerScreen> {
                 onSearch: notifier.searchAddress,
                 onSelect: notifier.setDestination,
               ),
+              if (nearbyRoutes.isNotEmpty && state is! PlannerResults) ...<Widget>[
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    AppStrings.nearbyRoutesTitle,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    AppStrings.nearbyRoutesHint,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                ...nearbyRoutes.map(
+                  (route) => ListTile(
+                    onTap: () => context.go('/trip/stop-select?routeId=${route.id}'),
+                    leading: RouteCodeBadge(code: route.code),
+                    title: Text(route.name),
+                    subtitle: (route.companyName ?? route.company ?? '').isNotEmpty
+                        ? Text(route.companyName ?? route.company ?? '')
+                        : null,
+                    trailing: const Icon(Icons.chevron_right),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               AppButton.primary(
                 label: AppStrings.planButton,

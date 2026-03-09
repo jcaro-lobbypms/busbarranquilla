@@ -43,7 +43,7 @@ class ActiveFeedBar extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: <BoxShadow>[
                   BoxShadow(
-                    color: AppColors.textSecondary.withOpacity(0.12),
+                    color: AppColors.textSecondary.withValues(alpha: 0.12),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),

@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 
 import '../../../core/data/repositories/routes_repository.dart';
+import '../../../core/domain/models/bus_route.dart';
 import '../../../core/domain/models/plan_result.dart';
 import '../../../core/error/result.dart';
 import '../../../core/l10n/strings.dart';
@@ -40,6 +43,18 @@ class PlannerNotifier extends Notifier<PlannerState> {
   NominatimResult? get selectedOrigin => _selectedOrigin;
   NominatimResult? get selectedDest => _selectedDest;
 
+  Future<void> _loadNearbyForOrigin(NominatimResult origin) async {
+    final result = await ref.read(routesRepositoryProvider).nearby(
+      lat: origin.lat,
+      lng: origin.lng,
+      radius: 0.5,
+    );
+
+    if (result is Success<List<BusRoute>> && state is PlannerIdle) {
+      state = (state as PlannerIdle).copyWith(nearbyRoutes: result.data);
+    }
+  }
+
   void setOrigin(NominatimResult origin) {
     _selectedOrigin = origin;
 
@@ -56,6 +71,8 @@ class PlannerNotifier extends Notifier<PlannerState> {
       selectedOrigin: _selectedOrigin,
       selectedDest: _selectedDest,
     );
+
+    unawaited(_loadNearbyForOrigin(origin));
   }
 
   void setDestination(NominatimResult destination) {

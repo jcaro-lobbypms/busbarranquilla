@@ -28,6 +28,27 @@ dev_dependencies:
   flutter_lints: ^3.0.0
   build_runner: ^2.4.13
   riverpod_generator: ^2.4.3
+  flutter_launcher_icons: ^0.14.1
+  flutter_native_splash: ^2.4.1
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/icon/
+    - assets/splash/
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/icon.png"
+  adaptive_icon_background: "#1E3A5F"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
+  min_sdk_android: 21
+
+flutter_native_splash:
+  color: "#1E3A5F"
+  color_dark: "#1E3A5F"
+  image: assets/splash/splash_logo.png
+  android: true
+  ios: true
+  fullscreen: true
