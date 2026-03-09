@@ -54,14 +54,14 @@ class _PlannerScreenState extends ConsumerState<PlannerScreen> {
     final origin = notifier.selectedOrigin;
     final dest = notifier.selectedDest;
 
-    if (origin == null || dest == null) {
-      AppSnackbar.show(context, AppStrings.plannerPickPointsError, SnackbarType.info);
+    if (dest == null) {
+      AppSnackbar.show(context, AppStrings.plannerDestRequired, SnackbarType.info);
       return;
     }
 
     await notifier.planRoute(
-      originLat: origin.lat,
-      originLng: origin.lng,
+      originLat: origin?.lat,
+      originLng: origin?.lng,
       destLat: dest.lat,
       destLng: dest.lng,
     );
@@ -193,7 +193,7 @@ class _PlannerScreenState extends ConsumerState<PlannerScreen> {
                 const SizedBox(height: 6),
                 ...nearbyRoutes.map(
                   (route) => ListTile(
-                    onTap: () => context.go('/trip/stop-select?routeId=${route.id}'),
+                    onTap: () => context.push('/trip/confirm?routeId=${route.id}'),
                     leading: RouteCodeBadge(code: route.code),
                     title: Text(route.name),
                     subtitle: (route.companyName ?? route.company ?? '').isNotEmpty
@@ -226,10 +226,11 @@ class _PlannerScreenState extends ConsumerState<PlannerScreen> {
                             final result = results[index];
                             return PlanResultCard(
                               result: result,
-                              onSelect: () {
-                                ref.read(selectedPlanRouteProvider.notifier).state = result;
-                                context.go('/trip/stop-select?routeId=${result.id}');
-                              },
+                              onSelect: () => context.push(
+                                '/trip/confirm?routeId=${result.id}'
+                                '&destLat=${result.nearestStop.latitude}'
+                                '&destLng=${result.nearestStop.longitude}',
+                              ),
                             );
                           },
                         ),

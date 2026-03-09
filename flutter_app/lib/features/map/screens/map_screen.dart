@@ -14,6 +14,7 @@ import '../providers/map_provider.dart';
 import '../providers/map_state.dart';
 import '../widgets/active_feed_bar.dart';
 import '../widgets/bus_marker_layer.dart';
+import '../widgets/plan_markers_layer.dart';
 import '../widgets/report_marker_layer.dart';
 import '../widgets/user_marker_layer.dart';
 
@@ -68,17 +69,19 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             children: <Widget>[
               TileLayer(
                 urlTemplate: AppStrings.osmTileUrl,
+                subdomains: AppStrings.osmTileSubdomains,
                 userAgentPackageName: AppStrings.osmUserAgent,
               ),
-              if (ready.userPosition != null) UserMarkerLayer(position: ready.userPosition!),
               if (selectedRoute != null && selectedRoute.geometry.isNotEmpty)
                 RoutePolylineLayer(points: selectedRoute.geometry),
+              const PlanMarkersLayer(),
               ReportMarkerLayer(
                 reports: ready.reports,
                 activeTripRouteId: ready.activeTripRouteId,
                 onConfirm: (reportId) => ref.read(mapNotifierProvider.notifier).confirmReport(reportId),
               ),
               BusMarkerLayer(buses: ready.buses),
+              if (ready.userPosition != null) UserMarkerLayer(position: ready.userPosition!),
             ],
           ),
           Positioned(

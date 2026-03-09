@@ -135,8 +135,8 @@ class PlannerNotifier extends Notifier<PlannerState> {
   }
 
   Future<void> planRoute({
-    required double originLat,
-    required double originLng,
+    double? originLat,
+    double? originLng,
     required double destLat,
     required double destLng,
   }) async {

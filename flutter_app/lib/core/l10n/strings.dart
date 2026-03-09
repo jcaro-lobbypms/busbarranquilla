@@ -23,7 +23,8 @@ abstract final class AppStrings {
   static const routeInProgress = 'Ruta en curso';
   static const passengersLabel = 'pasajero(s)';
   static const nowAgo = 'Hace 0 min';
-  static const osmTileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  static const osmTileUrl = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
+  static const osmTileSubdomains = <String>['a', 'b', 'c', 'd'];
   static const osmUserAgent = 'co.mibus.app';
   static const locationRequired = 'Activa tu ubicación para usar el mapa.';
   static const boardingTitle = 'Abordaje';
@@ -44,6 +45,9 @@ abstract final class AppStrings {
   static const tripCreditsLabel = 'Créditos';
   static const tripClose = 'Cerrar';
   static const tripNoReports = 'No hay reportes activos';
+  static const tripDropoffStop = 'Parada de bajada';
+  static const tripChangeStop = 'Cambiar';
+  static const tripNoDropoff = 'Sin parada de destino';
   static const tripConfirm = 'Confirmar';
   static const tripStartFirst = 'Primero inicia un viaje';
 
@@ -59,6 +63,7 @@ abstract final class AppStrings {
   static const destLabel = 'Destino';
   static const currentLocationLabel = 'Mi ubicación';
   static const plannerPickPointsError = 'Selecciona origen y destino para continuar.';
+  static const plannerDestRequired = 'Escribe un destino para buscar rutas.';
   static const favoritesTitle = 'Favoritos';
   static const noFavorites = 'Aún no tienes rutas favoritas';
   static const nearbyRoutesTitle = 'Buses en tu zona';

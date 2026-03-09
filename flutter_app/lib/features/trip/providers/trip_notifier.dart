@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../../../core/data/repositories/reports_repository.dart';
 import '../../../core/data/repositories/routes_repository.dart';
@@ -35,6 +36,38 @@ class TripNotifier extends Notifier<TripState> {
   }
 
   bool get isActive => state is TripActive;
+
+  /// Starts a trip auto-selecting the stop nearest to [targetStop] as destination.
+  /// Used by the planner flow — no stop selection screen needed.
+  Future<void> startTripFromPlan(int routeId, LatLng targetStop) async {
+    state = const TripLoading();
+
+    final stopsResult = await ref.read(stopsRepositoryProvider).listByRoute(routeId);
+    int? destinationStopId;
+
+    if (stopsResult is Success<List<Stop>>) {
+      final stops = stopsResult.data;
+      Stop? nearest;
+      double bestDist = double.infinity;
+      for (final stop in stops) {
+        final d = LocationService.distanceMeters(
+          stop.latitude,
+          stop.longitude,
+          targetStop.latitude,
+          targetStop.longitude,
+        );
+        if (d < bestDist) {
+          bestDist = d;
+          nearest = stop;
+        }
+      }
+      destinationStopId = nearest?.id;
+    }
+
+    // Reset to idle so startTrip can set TripLoading again
+    state = const TripIdle();
+    await startTrip(routeId, destinationStopId: destinationStopId);
+  }
 
   Future<void> startTrip(int routeId, {int? destinationStopId}) async {
     state = const TripLoading();

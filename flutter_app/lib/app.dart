@@ -14,6 +14,7 @@ import 'features/profile/screens/credits_history_screen.dart';
 import 'features/profile/screens/profile_screen.dart';
 import 'features/shell/main_shell.dart';
 import 'features/trip/screens/active_trip_screen.dart';
+import 'features/trip/screens/boarding_confirm_screen.dart';
 import 'features/trip/screens/boarding_screen.dart';
 import 'features/trip/screens/stop_select_screen.dart';
 
@@ -25,14 +26,21 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final isGoingToAuth =
           state.matchedLocation == '/login' || state.matchedLocation == '/register';
+      final isLoading = state.matchedLocation == '/loading';
 
       return switch (authState) {
-        AuthInitial() || AuthLoading() => null,
-        Authenticated() => isGoingToAuth ? '/map' : null,
+        AuthInitial() || AuthLoading() => isLoading ? null : '/loading',
+        Authenticated() => isLoading || isGoingToAuth ? '/map' : null,
         Unauthenticated() || AuthErrorState() => isGoingToAuth ? null : '/login',
       };
     },
     routes: <RouteBase>[
+      GoRoute(
+        path: '/loading',
+        builder: (BuildContext context, GoRouterState state) => const Scaffold(
+          body: Center(child: CircularProgressIndicator()),
+        ),
+      ),
       GoRoute(
         path: '/login',
         builder: (BuildContext context, GoRouterState state) => const LoginScreen(),
@@ -44,6 +52,24 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/trip/boarding',
         builder: (BuildContext context, GoRouterState state) => const BoardingScreen(),
+      ),
+      GoRoute(
+        path: '/trip/confirm',
+        builder: (BuildContext context, GoRouterState state) {
+          final routeId = int.tryParse(state.uri.queryParameters['routeId'] ?? '');
+          if (routeId == null) {
+            return const Scaffold(
+              body: Center(child: Text(AppStrings.tripStartError)),
+            );
+          }
+          final destLat = double.tryParse(state.uri.queryParameters['destLat'] ?? '');
+          final destLng = double.tryParse(state.uri.queryParameters['destLng'] ?? '');
+          return BoardingConfirmScreen(
+            routeId: routeId,
+            destLat: destLat,
+            destLng: destLng,
+          );
+        },
       ),
       GoRoute(
         path: '/trip/stop-select',

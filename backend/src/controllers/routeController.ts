@@ -374,8 +374,8 @@ export const getPlanRoutes = async (req: Request, res: Response): Promise<void> 
   const hasOrigin = oLat !== null && oLng !== null && !isNaN(oLat!) && !isNaN(oLng!);
 
   // Thresholds: how close the route geometry must pass to each point
-  const ORIGIN_THRESHOLD_KM = 0.25;  // 250 m — route must pass within 250 m of origin
-  const DEST_THRESHOLD_KM   = 0.45;  // 450 m — route must pass within 450 m of destination
+  const ORIGIN_THRESHOLD_KM = 0.6;   // 600 m — route must pass within 600 m of origin
+  const DEST_THRESHOLD_KM   = 0.8;   // 800 m — route must pass within 800 m of destination
 
   try {
     // Fetch all active routes with geometry and their stops + last report
@@ -470,8 +470,8 @@ export const getPlanRoutes = async (req: Request, res: Response): Promise<void> 
           const d2 = haversineKm(dLat, dLng, sLat, sLng);
           if (d2 < minD) { minD = d2; alightIdx = i; }
         }
-        if (hasOrigin && minO > 0.8) continue;           // no nearby origin stop
-        if (minD > 0.8) continue;                         // no nearby dest stop
+        if (hasOrigin && minO > 1.5) continue;            // no nearby origin stop
+        if (minD > 1.5) continue;                         // no nearby dest stop
         if (hasOrigin && alightIdx <= boardIdx) continue; // wrong direction
         originDistKm = minO;
         destDistKm = minD;

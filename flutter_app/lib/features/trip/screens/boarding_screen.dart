@@ -82,6 +82,10 @@ class _BoardingScreenState extends ConsumerState<BoardingScreen> {
     }
   }
 
+  void _goToConfirm(int routeId) {
+    context.push('/trip/confirm?routeId=$routeId');
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -124,7 +128,7 @@ class _BoardingScreenState extends ConsumerState<BoardingScreen> {
                     final route = _nearbyRoutes[index];
                     return _NearbyRouteCard(
                       route: route,
-                      onTap: () => context.go('/trip/stop-select?routeId=${route.id}'),
+                      onTap: () => _goToConfirm(route.id),
                     );
                   },
                 ),
@@ -147,7 +151,7 @@ class _BoardingScreenState extends ConsumerState<BoardingScreen> {
                   final route = filtered[index];
 
                   return ListTile(
-                    onTap: () => context.go('/trip/stop-select?routeId=${route.id}'),
+                    onTap: () => _goToConfirm(route.id),
                     title: Text(route.name),
                     subtitle: Text(route.companyName ?? route.company ?? ''),
                     leading: RouteCodeBadge(code: route.code),
