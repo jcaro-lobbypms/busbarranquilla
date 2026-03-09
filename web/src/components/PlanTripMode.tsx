@@ -627,6 +627,20 @@ export default function PlanTripMode({
         previewRouteIdRef.current = null;
       }
     }
+
+    // Fetch actividad de la ruta seleccionada (non-blocking)
+    if (!activityByRoute[route.id]) {
+      setActivityLoading(prev => ({ ...prev, [route.id]: true }));
+      try {
+        const res = await routesApi.getActivity(route.id);
+        setActivityByRoute(prev => ({ ...prev, [route.id]: res.data }));
+        onActivityPositions?.(res.data.active_positions);
+      } catch { /* silencioso */ } finally {
+        setActivityLoading(prev => ({ ...prev, [route.id]: false }));
+      }
+    } else {
+      onActivityPositions?.(activityByRoute[route.id].active_positions);
+    }
   };
 
   // ── Fetch plan ─────────────────────────────────────────────────────────
@@ -1140,6 +1154,18 @@ export default function PlanTripMode({
 
                 {isSelected && (
                   <div className="px-2 pb-2 space-y-1.5">
+                    {/* Actividad de la ruta */}
+                    {activityLoading[r.id] && (
+                      <p className="text-xs text-gray-400">Cargando actividad...</p>
+                    )}
+                    {activityByRoute[r.id] && (() => {
+                      const act = activityByRoute[r.id];
+                      return act.active_count > 0
+                        ? <p className="text-xs text-green-600 font-semibold">🚌 {act.active_count} {act.active_count === 1 ? 'persona en el bus ahora' : 'personas en el bus ahora'}</p>
+                        : act.last_activity_minutes !== null
+                          ? <p className="text-xs text-amber-600">📡 Última actividad hace {act.last_activity_minutes} min</p>
+                          : <p className="text-xs text-gray-400">Sin actividad reciente</p>;
+                    })()}
                     <p className="text-xs text-gray-500">¿Va a tu destino? Escríbelo arriba ↑</p>
                     {onBoardRoute && (
                       <button

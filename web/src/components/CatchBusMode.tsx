@@ -174,6 +174,11 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
   const [routeReports, setRouteReports] = useState<RouteReport[]>([]);
   const [confirmCreditsEarned, setConfirmCreditsEarned] = useState(0);
 
+  // Route activity (last hour)
+  interface ActivityEvent { type: string; minutes_ago: number; confirmations?: number }
+  interface ActivityData { active_count: number; last_activity_minutes: number | null; events: ActivityEvent[] }
+  const [routeActivity, setRouteActivity] = useState<ActivityData | null>(null);
+
   // Toast: keyed to auto-dismiss the correct one
   const [toast, setToast] = useState<{ msg: string; id: number } | null>(null);
 
@@ -647,8 +652,13 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
     setSelectedRoute(route);
     setShowBoardConfirm(false);
     setView('waiting');
+    setRouteActivity(null);
     onRouteGeometry?.(route.geometry ?? null); // emit inmediato (puede ser null)
     const pos = userPositionRef.current;
+
+    routesApi.getActivity(route.id)
+      .then((r) => setRouteActivity(r.data))
+      .catch(() => {});
 
     routesApi.getById(route.id).then((r) => {
       const fullRoute = r.data.route as {
@@ -1345,6 +1355,23 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
             <p className="text-xs text-gray-400">🕐 Cada {selectedRoute.frequency_minutes} min</p>
           )}
         </div>
+
+        {/* Route activity */}
+        {routeActivity && (
+          <div className="bg-gray-50 border border-gray-100 rounded-2xl px-3.5 py-3 text-sm text-gray-700">
+            {routeActivity.active_count > 0 ? (
+              <span className="font-medium text-green-700">
+                🚌 {routeActivity.active_count} {routeActivity.active_count === 1 ? 'persona' : 'personas'} en el bus ahora
+              </span>
+            ) : routeActivity.last_activity_minutes !== null ? (
+              <span className="text-gray-500">
+                📡 Última actividad hace {routeActivity.last_activity_minutes} min
+              </span>
+            ) : (
+              <span className="text-gray-400">Sin actividad reciente en esta ruta</span>
+            )}
+          </div>
+        )}
 
         {/* Boarding stop guide */}
         {boardingStop && (
