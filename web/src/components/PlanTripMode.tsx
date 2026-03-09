@@ -984,7 +984,12 @@ export default function PlanTripMode({
                     </span>
                   );
                 })()}
-                <span className="text-gray-500">🏁 {r.distance_meters} m al bajar</span>
+                {(() => {
+                  const d = r.distance_meters;
+                  const cls = d <= 300 ? 'text-green-600' : d <= 600 ? 'text-amber-600' : 'text-red-500';
+                  const suffix = d > 600 ? ' al bajar (lejos)' : ' al bajar';
+                  return <span className={`font-medium ${cls}`}>🏁 {d} m{suffix}</span>;
+                })()}
                 {r.frequency_minutes && <span className="text-gray-500">🕐 Cada {r.frequency_minutes} min</span>}
                 {r.minutes_ago !== null && (
                   <span className="text-amber-600">📡 {r.minutes_ago} min</span>

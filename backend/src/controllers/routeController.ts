@@ -375,7 +375,7 @@ export const getPlanRoutes = async (req: Request, res: Response): Promise<void> 
 
   // Thresholds: how close the route geometry must pass to each point
   const ORIGIN_THRESHOLD_KM = 0.25;  // 250 m — route must pass within 250 m of origin
-  const DEST_THRESHOLD_KM   = 0.45;  // 450 m — route must pass within 450 m of destination
+  const DEST_THRESHOLD_KM   = 1.0;   // 1 km — route must pass within 1 km of destination
 
   try {
     // Fetch all active routes with geometry and their stops + last report
