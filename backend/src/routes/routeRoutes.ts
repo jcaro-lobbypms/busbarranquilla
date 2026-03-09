@@ -13,6 +13,7 @@ import {
   getPlanRoutes,
   regenerateGeometry,
   getRouteActivity,
+  snapWaypoints,
 } from '../controllers/routeController';
 import { recommendRoutes } from '../controllers/recommendController';
 import {
@@ -32,6 +33,7 @@ router.get('/search', searchRoute);
 router.post('/recommend', recommendRoutes);
 router.get('/active-feed', authMiddleware, getActiveFeed);
 router.get('/plan', authMiddleware, getPlanRoutes);
+router.post('/snap-waypoints', authMiddleware, requireRole('admin'), snapWaypoints);
 router.get('/update-alerts', authMiddleware, requireRole('admin'), getRouteUpdateAlerts);
 router.get('/update-alerts/count', authMiddleware, requireRole('admin'), getRouteUpdateAlertsCount);
 

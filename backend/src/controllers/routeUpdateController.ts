@@ -47,11 +47,12 @@ export const reportRouteUpdate = async (req: Request, res: Response): Promise<vo
 // Rutas que superaron el umbral de reportes "ruta_real" en los últimos 30 días
 export const getRouteUpdateAlerts = async (_req: Request, res: Response): Promise<void> => {
   try {
-    const result = await pool.query(
+    const alertsResult = await pool.query(
       `SELECT
          r.id,
          r.name,
          r.code,
+         r.geometry,
          r.route_alert_reviewed_at,
          COUNT(rur.id) FILTER (WHERE rur.tipo = 'ruta_real') AS ruta_real_count,
          COUNT(rur.id) FILTER (WHERE rur.tipo = 'trancon')   AS trancon_count,
@@ -70,7 +71,49 @@ export const getRouteUpdateAlerts = async (_req: Request, res: Response): Promis
       [RUTA_REAL_THRESHOLD]
     );
 
-    res.json({ alerts: result.rows });
+    // Para cada alerta, obtener reportantes y sus últimas posiciones GPS
+    const alerts = await Promise.all(
+      alertsResult.rows.map(async (row) => {
+        // Reportantes con nombre y tipo
+        const reportersResult = await pool.query(
+          `SELECT u.name AS user_name, rur.tipo, rur.created_at
+           FROM route_update_reports rur
+           JOIN users u ON u.id = rur.user_id
+           WHERE rur.route_id = $1
+             AND rur.created_at > NOW() - INTERVAL '30 days'
+           ORDER BY rur.created_at DESC`,
+          [row.id]
+        );
+
+        // Últimas posiciones GPS de usuarios que reportaron "ruta_real" (viajes activos o recientes)
+        const gpsResult = await pool.query(
+          `SELECT at.current_latitude AS lat, at.current_longitude AS lng, at.last_location_at
+           FROM active_trips at
+           WHERE at.route_id = $1
+             AND at.last_location_at > NOW() - INTERVAL '7 days'
+             AND at.user_id IN (
+               SELECT user_id FROM route_update_reports
+               WHERE route_id = $1
+                 AND tipo = 'ruta_real'
+                 AND created_at > NOW() - INTERVAL '30 days'
+             )
+           ORDER BY at.last_location_at DESC
+           LIMIT 20`,
+          [row.id]
+        );
+
+        return {
+          ...row,
+          reporters: reportersResult.rows,
+          reporter_positions: gpsResult.rows.map((p: { lat: string; lng: string }) => [
+            parseFloat(p.lat),
+            parseFloat(p.lng),
+          ]),
+        };
+      })
+    );
+
+    res.json({ alerts });
   } catch (error) {
     console.error('Error en getRouteUpdateAlerts:', error);
     res.status(500).json({ message: 'Error interno del servidor' });

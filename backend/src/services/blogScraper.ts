@@ -11,7 +11,12 @@ export interface ScanResult {
   new: number;
   updated: number;
   unchanged: number;
+  skipped: number;
   errors: number;
+}
+
+export interface ScanOptions {
+  skipManuallyEdited?: boolean;
 }
 
 export interface ScanProgress {
@@ -76,7 +81,7 @@ async function fetchRouteUrls(): Promise<string[]> {
 
 // ── Procesa un post individual ────────────────────────────────────────────────
 
-async function processRouteUrl(url: string, result: ScanResult): Promise<string> {
+async function processRouteUrl(url: string, result: ScanResult, options: ScanOptions = {}): Promise<string> {
   const { data: html } = await axios.get<string>(url, {
     headers: { 'User-Agent': UA },
     timeout: 15000,
@@ -108,8 +113,8 @@ async function processRouteUrl(url: string, result: ScanResult): Promise<string>
 
   const company = title.split(/\s+/)[0];
 
-  const existing = await pool.query<{ id: number; description: string | null }>(
-    'SELECT id, description FROM routes WHERE code = $1',
+  const existing = await pool.query<{ id: number; description: string | null; manually_edited_at: string | null }>(
+    'SELECT id, description, manually_edited_at FROM routes WHERE code = $1',
     [code]
   );
 
@@ -121,6 +126,9 @@ async function processRouteUrl(url: string, result: ScanResult): Promise<string>
     );
     console.log(`🆕 Nueva: ${code}`);
     result.new++;
+  } else if (options.skipManuallyEdited && existing.rows[0].manually_edited_at !== null) {
+    console.log(`🔒 Omitida (editada manualmente): ${code}`);
+    result.skipped++;
   } else if (existing.rows[0].description !== recorrido) {
     await pool.query(
       `UPDATE routes SET name=$1, company=$2, description=$3, status='pending' WHERE id=$4`,
@@ -139,9 +147,10 @@ async function processRouteUrl(url: string, result: ScanResult): Promise<string>
 // ── Función principal exportada ───────────────────────────────────────────────
 
 export async function scanBlog(
-  onProgress?: (update: ScanProgress) => void
+  onProgress?: (update: ScanProgress) => void,
+  options: ScanOptions = {}
 ): Promise<ScanResult> {
-  const result: ScanResult = { new: 0, updated: 0, unchanged: 0, errors: 0 };
+  const result: ScanResult = { new: 0, updated: 0, unchanged: 0, skipped: 0, errors: 0 };
 
   let urls: string[];
   try {
@@ -157,7 +166,7 @@ export async function scanBlog(
   for (let i = 0; i < urls.length; i++) {
     try {
       await sleep(300);
-      const title = await processRouteUrl(urls[i], result);
+      const title = await processRouteUrl(urls[i], result, options);
       onProgress?.({
         total: urls.length,
         current: i + 1,

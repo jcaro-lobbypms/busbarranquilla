@@ -91,11 +91,14 @@ export const routesApi = {
   getActivity: (id: number) =>
     api.get(`/api/routes/${id}/activity`),
 
-  scanBlog: () =>
-    api.post('/api/admin/routes/scan-blog'),
+  snapWaypoints: (waypoints: [number, number][]) =>
+    api.post('/api/routes/snap-waypoints', { waypoints }),
 
-  processImports: () =>
-    api.post('/api/admin/routes/process-imports'),
+  scanBlog: (skipManuallyEdited = false) =>
+    api.post('/api/admin/routes/scan-blog', { skipManuallyEdited }),
+
+  processImports: (skipManuallyEdited = false) =>
+    api.post('/api/admin/routes/process-imports', { skipManuallyEdited }),
 
   getPendingCount: () =>
     api.get('/api/admin/routes/pending-count'),

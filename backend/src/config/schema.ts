@@ -263,6 +263,13 @@ const createTables = async () => {
     `);
     console.log('✅ Columna route_alert_reviewed_at en routes');
 
+    // Marca de edición manual por el admin (protege la ruta de ser sobreescrita en imports)
+    await pool.query(`
+      ALTER TABLE routes
+        ADD COLUMN IF NOT EXISTS manually_edited_at TIMESTAMPTZ DEFAULT NULL
+    `);
+    console.log('✅ Columna manually_edited_at en routes');
+
     // Cerrar viajes zombie (activos por más de 4 horas sin actualización de ubicación)
     const zombieClosed = await pool.query(`
       UPDATE active_trips

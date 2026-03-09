@@ -310,10 +310,12 @@ export const toggleRouteActive = async (req: Request, res: Response): Promise<vo
 
 // POST /api/admin/routes/scan-blog — lanzar scraper del blog de rutas
 export const scanBlogRoutes = async (req: Request, res: Response): Promise<void> => {
+  const { skipManuallyEdited = false } = req.body as { skipManuallyEdited?: boolean };
   try {
-    const result = await scanBlog((update) => {
-      getIo().emit('scan:progress', update);
-    });
+    const result = await scanBlog(
+      (update) => { getIo().emit('scan:progress', update); },
+      { skipManuallyEdited }
+    );
     res.json({ success: true, result });
   } catch (error) {
     console.error('Error ejecutando scan del blog:', error);
@@ -323,10 +325,12 @@ export const scanBlogRoutes = async (req: Request, res: Response): Promise<void>
 
 // POST /api/admin/routes/process-imports — geocodificar e importar rutas pendientes
 export const processImportedRoutes = async (req: Request, res: Response): Promise<void> => {
+  const { skipManuallyEdited = false } = req.body as { skipManuallyEdited?: boolean };
   try {
-    const result = await processImports((update) => {
-      getIo().emit('process:progress', update);
-    });
+    const result = await processImports(
+      (update) => { getIo().emit('process:progress', update); },
+      { skipManuallyEdited }
+    );
     res.json({ success: true, result });
   } catch (error) {
     console.error('Error procesando importaciones:', error);

@@ -95,8 +95,11 @@ export const createRoute = async (req: Request, res: Response): Promise<void> =>
     const route = result.rows[0];
 
     if (Array.isArray(geometry)) {
-      // Geometry provided directly — persist and return
-      await pool.query('UPDATE routes SET geometry = $1 WHERE id = $2', [JSON.stringify(geometry), route.id]);
+      // Geometry provided directly by admin — persist and mark as manually edited
+      await pool.query(
+        'UPDATE routes SET geometry = $1, manually_edited_at = NOW() WHERE id = $2',
+        [JSON.stringify(geometry), route.id]
+      );
       route.geometry = geometry;
     } else {
       // Try OSRM (non-blocking: failure keeps geometry null)
@@ -199,7 +202,8 @@ export const updateRoute = async (req: Request, res: Response): Promise<void> =>
            company_id = COALESCE($4, company_id),
            first_departure = COALESCE($5, first_departure),
            last_departure = COALESCE($6, last_departure),
-           frequency_minutes = COALESCE($7, frequency_minutes)
+           frequency_minutes = COALESCE($7, frequency_minutes),
+           manually_edited_at = NOW()
        WHERE id = $8
        RETURNING *`,
       [name, code, company, company_id ?? null, first_departure, last_departure, frequency_minutes, id]
@@ -634,13 +638,42 @@ export const regenerateGeometry = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    await pool.query('UPDATE routes SET geometry = $1 WHERE id = $2', [JSON.stringify(osrm.points), id]);
+    // OSRM regeneró la geometría — ya no es edición manual
+    await pool.query(
+      'UPDATE routes SET geometry = $1, manually_edited_at = NULL WHERE id = $2',
+      [JSON.stringify(osrm.points), id]
+    );
     await computeLegsForRoute(parseInt(id as string, 10));
 
     res.json({ success: true, pointsCount: osrm.points.length, hadFallbacks: osrm.hadFallbacks });
 
   } catch (error) {
     console.error('Error regenerando geometría:', error);
+    res.status(500).json({ message: 'Error interno del servidor' });
+  }
+};
+
+// Snap waypoints a calles usando OSRM (requiere admin)
+export const snapWaypoints = async (req: Request, res: Response): Promise<void> => {
+  const { waypoints } = req.body as { waypoints: [number, number][] };
+
+  if (!Array.isArray(waypoints) || waypoints.length < 2) {
+    res.status(400).json({ message: 'Se necesitan al menos 2 waypoints' });
+    return;
+  }
+
+  try {
+    const stops = waypoints.map(([lat, lng]) => ({ latitude: lat, longitude: lng }));
+    const result = await fetchOSRMGeometry(stops);
+
+    if (!result) {
+      res.status(422).json({ message: 'OSRM no pudo calcular la ruta para esos waypoints' });
+      return;
+    }
+
+    res.json({ geometry: result.points, hadFallbacks: result.hadFallbacks });
+  } catch (error) {
+    console.error('Error en snap-waypoints:', error);
     res.status(500).json({ message: 'Error interno del servidor' });
   }
 };

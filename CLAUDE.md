@@ -96,7 +96,7 @@ npm run web
 
 **Route geometry** — stored as JSONB in `routes.geometry` as `[lat, lng][]`. On create/update, the backend calls OSRM (two-attempt strategy: full route first, then segment-by-segment with straight-line fallback). Geometry can be regenerated on demand via `POST /api/routes/:id/regenerate-geometry`. The `pg` library auto-parses JSONB to `[number, number][]` — no manual JSON.parse needed in frontend. 78 routes have geometry covering lat 10.83–11.04, lng -74.89–-74.76.
 
-**Trip planner (`/api/routes/plan`)** — geometry-based matching, not stop-based. Uses `haversineKm()` and `minDistToGeometry()` helpers. A route matches if its polyline passes within `ORIGIN_THRESHOLD_KM = 0.25` (250 m) of origin AND within `DEST_THRESHOLD_KM = 0.45` (450 m) of destination, with dest index > origin index (direction check). Fallback to stop-based (0.8 km radius) for routes without geometry. Results sorted by `origin_distance_meters + distance_meters`.
+**Trip planner (`/api/routes/plan`)** — geometry-based matching, not stop-based. Uses `haversineKm()` and `minDistToGeometry()` helpers. A route matches if its polyline passes within `ORIGIN_THRESHOLD_KM = 0.25` (250 m) of origin AND within `DEST_THRESHOLD_KM = 1.0` (1 km) of destination, with dest index > origin index (direction check). Fallback to stop-based (0.8 km radius) for routes without geometry. Results sorted by `origin_distance_meters + distance_meters`.
 
 **Socket.io** — configured in `config/socket.ts`. Real-time bus location tracking via `bus:location`, `bus:joined`, `bus:left`, `route:nearby` channels. Route-specific rooms (`route:{id}`) for real-time report events: clients emit `join:route` / `leave:route` when boarding/alighting, server emits `route:new_report` and `route:report_confirmed` to the room.
 
@@ -113,17 +113,23 @@ backend/src/
 │   ├── database.ts          # pg Pool
 │   ├── schema.ts            # CREATE TABLE + migrations + auto-seed
 │   └── socket.ts            # Socket.io setup
+├── services/
+│   ├── blogScraper.ts       # scanBlog(onProgress, {skipManuallyEdited}) — scrapes WordPress blog
+│   ├── routeProcessor.ts    # processImports(onProgress, {skipManuallyEdited}) — geocodes + OSRM
+│   ├── osrmService.ts       # fetchOSRMGeometry(stops) — 2-attempt OSRM strategy
+│   └── legService.ts        # computeLegsForRoute — post-geometry leg computation
 ├── controllers/
-│   ├── adminController.ts   # Users CRUD + Companies CRUD
-│   ├── authController.ts    # register, login, profile
-│   ├── creditController.ts  # balance, history, spend, awardCredits()
-│   ├── paymentController.ts # Wompi: getPlans, createCheckout, handleWebhook
-│   ├── recommendController.ts # Route recommendations
-│   ├── reportController.ts  # create, nearby, confirm, resolveReport
-│   ├── routeController.ts   # CRUD + search + nearby + activeFeed + getPlanRoutes (geometry-based) + regenerateGeometry
-│   ├── stopController.ts    # CRUD per route
-│   ├── tripController.ts    # start, updateLocation, end, active buses, getTripCurrent
-│   └── userController.ts    # listFavorites, addFavorite, removeFavorite
+│   ├── adminController.ts       # Users CRUD + Companies CRUD + scanBlog + processImports (with skipManuallyEdited)
+│   ├── authController.ts        # register, login, profile
+│   ├── creditController.ts      # balance, history, spend, awardCredits()
+│   ├── paymentController.ts     # Wompi: getPlans, createCheckout, handleWebhook
+│   ├── recommendController.ts   # Route recommendations
+│   ├── reportController.ts      # create, nearby, confirm, resolveReport
+│   ├── routeController.ts       # CRUD + search + nearby + activeFeed + getPlanRoutes + regenerateGeometry + getRouteActivity + snapWaypoints
+│   ├── routeUpdateController.ts # reportRouteUpdate, getRouteUpdateAlerts (incl. geometry+reporters+GPS), getRouteUpdateAlertsCount, dismissRouteAlert
+│   ├── stopController.ts        # CRUD per route
+│   ├── tripController.ts        # start, updateLocation, end, active buses, getTripCurrent
+│   └── userController.ts        # listFavorites, addFavorite, removeFavorite
 ├── middlewares/
 │   ├── authMiddleware.ts    # JWT verify → req.userId, req.userRole
 │   ├── creditMiddleware.ts  # Credit check for premium features
@@ -142,6 +148,22 @@ backend/src/
     └── seedRoutes.ts        # Barranquilla routes + stops seed data
 ```
 
+#### New API endpoints (added in Phase 3.8)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/api/routes/snap-waypoints` | admin | Takes `{waypoints: [lat,lng][]}`, calls OSRM, returns road-snapped `{geometry, hadFallbacks}` |
+
+#### New API endpoints (added in Phase 3.7)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/routes/:id/activity` | ✅ | Route activity last hour: `active_count`, `last_activity_minutes`, `events[]`, `active_positions[]` |
+| POST | `/api/routes/:id/update-report` | ✅ | User votes `trancon` or `ruta_real` on a route (upsert, one vote per user per route) |
+| GET | `/api/routes/update-alerts` | admin | Routes with ≥3 `ruta_real` votes — includes `geometry`, `reporters[]`, `reporter_positions[]` |
+| GET | `/api/routes/update-alerts/count` | admin | Count of unreviewed route update alerts (for sidebar badge) |
+| PATCH | `/api/routes/:id/dismiss-alert` | admin | Mark alert as reviewed (`route_alert_reviewed_at = NOW()`) |
+
 #### New API endpoints (added in Phase 3.5)
 
 | Method | Path | Auth | Description |
@@ -156,18 +178,12 @@ backend/src/
 | POST | `/api/payments/checkout` | ✅ | Creates Wompi payment link, saves pending payment, returns `checkout_url` |
 | POST | `/api/payments/webhook` | public | Wompi webhook: verifies SHA256 signature, on APPROVED → sets `is_premium=true`, `role='premium'`, extends `premium_expires_at`, awards +50 bonus credits |
 
-#### New API endpoints (added in Phase 3.5)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/api/reports/route/:routeId` | ✅ | Active reports for a route with `confirmed_by_me`, `is_valid`, `needed_confirmations` — only returns reports from other users |
-
 #### New API endpoints (added in Phase 2)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/api/routes/active-feed` | ✅ | Up to 8 routes with reports in last 60 min |
-| GET | `/api/routes/plan?originLat=X&originLng=Y&destLat=X&destLng=Y` | ✅ | Geometry-based trip planner: routes whose polyline passes ≤250 m of origin and ≤450 m of dest (direction-aware). Origin optional. |
+| GET | `/api/routes/plan?originLat=X&originLng=Y&destLat=X&destLng=Y` | ✅ | Geometry-based trip planner: routes whose polyline passes ≤250 m of origin and ≤1000 m of dest (direction-aware). Origin optional. |
 | POST | `/api/routes/:id/regenerate-geometry` | admin | Re-fetch OSRM geometry for a route |
 | GET | `/api/trips/current` | ✅ | Active trip for current user (`{ trip: null }` if none) |
 | PATCH | `/api/reports/:id/resolve` | ✅ | Self-resolve own report |
@@ -202,24 +218,25 @@ web/src/
 │   └── socket.ts                  # Socket.io client
 ├── components/
 │   ├── AdminRoute.tsx             # Layout route guard (role check → Outlet)
-│   ├── CatchBusMode.tsx           # "Me subí/bajé" flow + 4 background monitors
+│   ├── CatchBusMode.tsx           # "Me subí/bajé" flow + 4 background monitors + activity display in waiting view
 │   ├── CreditBalance.tsx
-│   ├── MapView.tsx                # Leaflet map: stops, feed routes, active trip geometry + CenterTracker
+│   ├── MapView.tsx                # Leaflet map: stops, feed routes, active trip geometry + CenterTracker + bus icon on trip + activity positions
 │   ├── Navbar.tsx                 # Shows ⚙️ Admin for admin, ⚡ Premium link for non-premium
 │   ├── NearbyRoutes.tsx
-│   ├── PlanTripMode.tsx           # Trip planner: Nominatim geocoding + /plan endpoint
+│   ├── PlanTripMode.tsx           # Trip planner: Nominatim geocoding + /plan endpoint + activity panel in results
 │   ├── ReportButton.tsx           # Has ✕ close button
 │   ├── RoutePlanner.tsx
 │   └── TripPanel.tsx
 └── pages/
     ├── Home.tsx
     ├── Login.tsx
-    ├── Map.tsx                    # Main map page: wires all modes + geometry state + map pick overlay
+    ├── Map.tsx                    # Main map page: wires all modes + geometry state + map pick overlay + routeActivityPositions
     ├── PaymentResultPage.tsx      # Handles Wompi redirect: ?status=APPROVED|DECLINED
     ├── PremiumPage.tsx            # Plan listing + Wompi checkout redirect
     ├── Register.tsx
     └── admin/
-        ├── AdminLayout.tsx        # Sidebar (gray-900) + Outlet — NO Navbar
+        ├── AdminLayout.tsx        # Sidebar (gray-900) + Outlet — NO Navbar + alert badge polling
+        ├── AdminRouteAlerts.tsx   # Route update alerts: ≥3 ruta_real votes → regenerar/dismiss
         ├── AdminRoutes.tsx        # Bus routes CRUD + geometry editor + Regenerar
         ├── AdminUsers.tsx         # Users table + role/active/delete actions
         └── AdminCompanies.tsx     # Companies table + CRUD + routes viewer
@@ -250,7 +267,8 @@ Active while a trip is running (`view === 'active'`). All monitors start on trip
 | Export | Endpoints |
 |--------|-----------|
 | `authApi` | register, login, getProfile |
-| `routesApi` | list, getById, search, nearby, create, update, delete, recommend, activeFeed, plan, regenerateGeometry |
+| `routesApi` | list, getById, search, nearby, create, update, delete, recommend, activeFeed, plan, regenerateGeometry, getActivity, toggleActive, snapWaypoints, scanBlog(skipManuallyEdited), processImports(skipManuallyEdited) |
+| `routeAlertsApi` | getAlerts, getAlertsCount, dismissAlert |
 | `stopsApi` | listByRoute, add, delete, deleteByRoute |
 | `adminApi` | getCompanies |
 | `reportsApi` | getNearby, create, confirm, resolve, getOccupancy, getRouteReports |
@@ -265,8 +283,9 @@ Active while a trip is running (`view === 'active'`). All monitors start on trip
 |------|-----------|-------------|
 | `/admin` | — | Redirects to `/admin/users` |
 | `/admin/users` | `AdminUsers` | Users table: change role, toggle active, delete |
-| `/admin/routes` | `AdminRoutes` | Bus routes CRUD + geometry editor + Regenerar per row |
+| `/admin/routes` | `AdminRoutes` | Bus routes CRUD + waypoint geometry editor (OSRM road-snap) + import mode toggle |
 | `/admin/companies` | `AdminCompanies` | Companies CRUD + view associated routes |
+| `/admin/route-alerts` | `AdminRouteAlerts` | Routes flagged by ≥3 users — mini-map (current geometry + reporter GPS), reporters table, actions |
 
 #### Admin API endpoints
 
@@ -303,7 +322,13 @@ Functions: `getUsers`, `updateUserRole`, `toggleUserActive`, `deleteUser`, `getC
 
 ### routes
 `id, name, code (UNIQUE), company, first_departure, last_departure, frequency_minutes, is_active, created_at`
-**Migrations added:** `company_id INTEGER REFERENCES companies(id) ON DELETE SET NULL`, `geometry JSONB DEFAULT NULL`
+**Migrations added:** `company_id INTEGER REFERENCES companies(id) ON DELETE SET NULL`, `geometry JSONB DEFAULT NULL`, `route_alert_reviewed_at TIMESTAMPTZ DEFAULT NULL`, `manually_edited_at TIMESTAMPTZ DEFAULT NULL`
+
+`manually_edited_at` is set to `NOW()` when admin edits a route via `PUT /api/routes/:id`. Cleared to `NULL` when `POST /api/routes/:id/regenerate-geometry` runs. Used by import system to skip manually-edited routes.
+
+### route_update_reports
+`id, route_id (→ routes CASCADE), user_id (→ users CASCADE), tipo VARCHAR(20) CHECK ('trancon'|'ruta_real'), created_at` — `UNIQUE(route_id, user_id)`
+User votes that the bus route has changed or is stuck. ≥3 `ruta_real` votes trigger an admin alert.
 
 ### stops
 `id, route_id, name, latitude, longitude, stop_order, created_at`
@@ -509,6 +534,69 @@ Functions: `getUsers`, `updateUserRole`, `toggleUserActive`, `deleteUser`, `getC
 **Docker:**
 - `web/Dockerfile.dev` — Node.js 20 Alpine, runs `npm run dev` (replaces nginx multi-stage that caused `npm: not found`)
 - `docker-compose.yml` uses `dockerfile: Dockerfile.dev` for web service
+
+### Phase 3.7 ✅ Complete
+
+**Trip planner destination threshold:**
+- `DEST_THRESHOLD_KM` raised from `0.45` → `1.0` (1 km) — catches routes that drop off nearby but not right at the destination (e.g. D8 Lolaya at 618 m)
+
+**Bus icon on active trip:**
+- `MapView.tsx`: user location marker changes to a green pulsing 🚌 icon (`USER_ON_BUS_ICON`) when the user has an active trip (`activeTripGeometry` is set)
+- `ACTIVITY_BUS_ICON` (amber pulsing 🚌) rendered for each active position from `routeActivityPositions` prop — shows other active buses on the selected route
+
+**Route activity feature — "¿Hay actividad en esta ruta?"**
+- New backend endpoint `GET /api/routes/:id/activity` (auth): queries `active_trips` + `reports` from last hour, returns:
+  - `active_count` — users currently on this route
+  - `last_activity_minutes` — minutes since last boarding/alighting/report (null if >60 min)
+  - `events[]` — boarding, alighting and report events with timestamps and confirmations
+  - `active_positions[]` — `[lat, lng]` of currently active trips for map rendering
+- `routesApi.getActivity(id)` added to `api.ts`
+- **PlanTripMode**: activity fetched on `handleSelectRoute` and `handleNearbyPreview`; shown as collapsible panel in plan result cards and inline in "Buses en tu zona" selected card
+- **CatchBusMode**: activity fetched on `handleSelectRoute`; shown as summary card in the waiting view (between route info and boarding stop)
+- **MapView**: `routeActivityPositions` prop renders amber 🚌 markers for active trips on the previewed route
+- **Map.tsx**: `routeActivityPositions` state wires PlanTripMode → MapView
+
+**Route update alert system:**
+- Passengers can flag a route as `trancon` (stuck in traffic) or `ruta_real` (real route differs from map)
+- New table `route_update_reports` — one vote per user per route (upsert)
+- When ≥3 users flag `ruta_real` in 30 days → admin alert is triggered
+- New admin page `/admin/route-alerts` (`AdminRouteAlerts.tsx`) — shows alert cards, two actions per route: "Regenerar geometría y marcar revisada" or "Marcar como revisada"
+- `AdminLayout.tsx` sidebar shows red badge with unreviewed count (polls every 60 s)
+- `routeAlertsApi` added to `api.ts`: `getAlerts`, `getAlertsCount`, `dismissAlert`
+- New DB column `routes.route_alert_reviewed_at` tracks when admin last reviewed
+
+### Phase 3.8 ✅ Complete
+
+**Waypoint geometry editor with road snapping:**
+- New endpoint `POST /api/routes/snap-waypoints` (admin): receives `{waypoints: [lat,lng][]}`, calls OSRM, returns full road-snapped geometry
+- `routesApi.snapWaypoints(waypoints)` added to `api.ts`
+- AdminRoutes.tsx geometry editor completely reworked:
+  - "✏️ Editar trazado por calles" extracts ~12 evenly-spaced orange waypoint markers from existing geometry
+  - Drag any waypoint → calls snap endpoint → polyline updates following real streets
+  - Click on empty map → adds new waypoint at that position + snaps
+  - Click on waypoint → removes it + snaps (min 2 waypoints)
+  - "⏳ Calculando ruta por calles…" indicator while OSRM responds
+  - "🔄 Resetear a OSRM" re-extracts waypoints from the OSRM geometry
+- `snapAndUpdate(waypoints)` useCallback; fallback to raw waypoints if OSRM fails
+- `waypointsRef` keeps waypoint state accessible inside Leaflet drag events
+
+**AdminRouteAlerts visual comparison:**
+- `getRouteUpdateAlerts` now returns per alert: `geometry` (current DB polyline), `reporters[]` ({user_name, tipo, created_at}), `reporter_positions[]` (last GPS of reporters in past 7 days)
+- `AdminRouteAlerts.tsx` collapsible "Ver trazado y reportantes" panel per alert:
+  - `RouteMapPreview` Leaflet sub-component: blue polyline = current DB route, red pulsing dots = reporter GPS positions, green/red dots = start/end markers, legend
+  - Reporters table: name | tipo badge | relative time
+- Actions: "Regenerar desde paradas" | "✏️ Editar trazado manualmente" → `/admin/routes` | "Ya revisé, marcar cerrada"
+
+**Import protection (manually_edited_at):**
+- New DB column `routes.manually_edited_at TIMESTAMPTZ` — set `NOW()` on `PUT /api/routes/:id`, cleared `NULL` on `regenerateGeometry`
+- `blogScraper.ts`: `ScanOptions.skipManuallyEdited` — skips existing routes with `manually_edited_at IS NOT NULL`; `ScanResult` now includes `skipped` count
+- `routeProcessor.ts`: `ProcessOptions.skipManuallyEdited` — skips pending routes with `manually_edited_at IS NOT NULL`; `ProcessResult` now includes `skipped` count
+- `adminController.ts`: reads `skipManuallyEdited` from `req.body` and passes to both services
+- `api.ts`: `scanBlog(skipManuallyEdited)`, `processImports(skipManuallyEdited)`
+- `AdminRoutes.tsx`:
+  - Toggle UI: **🔒 Solo nuevas** (default) / **🔄 Todas** — controls `importMode` state
+  - Routes with `manually_edited_at` show `✏️ manual` amber badge in the table with tooltip date
+  - Result messages show omitted count: "3 omitidas (editadas)"
 
 ### Phase 4 — Future
 - React Native mobile app (early stage in `mobile/`)
