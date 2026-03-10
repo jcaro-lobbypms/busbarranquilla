@@ -119,7 +119,7 @@ backend/src/
 │   ├── osrmService.ts       # fetchOSRMGeometry(stops) — 2-attempt OSRM strategy
 │   └── legService.ts        # computeLegsForRoute — post-geometry leg computation
 ├── controllers/
-│   ├── adminController.ts       # Users CRUD + Companies CRUD + scanBlog + processImports (with skipManuallyEdited)
+│   ├── adminController.ts       # Users CRUD + Companies CRUD + scanBlog + processImports (with skipManuallyEdited) + getAdminStats
 │   ├── authController.ts        # register, login, profile
 │   ├── creditController.ts      # balance, history, spend, awardCredits()
 │   ├── paymentController.ts     # Wompi: getPlans, createCheckout, handleWebhook
@@ -147,6 +147,13 @@ backend/src/
 └── scripts/
     └── seedRoutes.ts        # Barranquilla routes + stops seed data
 ```
+
+#### New API endpoints (added in Phase 3.9)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/trips/history` | ✅ | Last 20 completed trips for current user — `id, route_name, route_code, started_at, ended_at, credits_earned, duration_minutes` |
+| GET | `/api/admin/stats` | admin | Dashboard stats: users, trips, reports, credits, active_now, top_routes (last 24h) |
 
 #### New API endpoints (added in Phase 3.8)
 
@@ -233,9 +240,11 @@ web/src/
     ├── Map.tsx                    # Main map page: wires all modes + geometry state + map pick overlay + routeActivityPositions
     ├── PaymentResultPage.tsx      # Handles Wompi redirect: ?status=APPROVED|DECLINED
     ├── PremiumPage.tsx            # Plan listing + Wompi checkout redirect
-    ├── Register.tsx
+    ├── Register.tsx               # Referral code optional field
+    ├── TripHistory.tsx            # Last 20 trips: route, date, duration, credits
     └── admin/
         ├── AdminLayout.tsx        # Sidebar (gray-900) + Outlet — NO Navbar + alert badge polling
+        ├── AdminStats.tsx         # Dashboard: users/trips/reports/credits/top routes
         ├── AdminRouteAlerts.tsx   # Route update alerts: ≥3 ruta_real votes → regenerar/dismiss
         ├── AdminRoutes.tsx        # Bus routes CRUD + geometry editor + Regenerar
         ├── AdminUsers.tsx         # Users table + role/active/delete actions
@@ -281,7 +290,8 @@ Active while a trip is running (`view === 'active'`). All monitors start on trip
 
 | Path | Component | Description |
 |------|-----------|-------------|
-| `/admin` | — | Redirects to `/admin/users` |
+| `/admin` | — | Redirects to `/admin/stats` |
+| `/admin/stats` | `AdminStats` | Dashboard: users/trips/reports/credits stats + top routes |
 | `/admin/users` | `AdminUsers` | Users table: change role, toggle active, delete |
 | `/admin/routes` | `AdminRoutes` | Bus routes CRUD + waypoint geometry editor (OSRM road-snap) + import mode toggle |
 | `/admin/companies` | `AdminCompanies` | Companies CRUD + view associated routes |
@@ -296,6 +306,7 @@ Active while a trip is running (`view === 'active'`). All monitors start on trip
 | PATCH | `/api/admin/users/:id/role` | Change user role |
 | PATCH | `/api/admin/users/:id/toggle-active` | Toggle user active state |
 | DELETE | `/api/admin/users/:id` | Delete user |
+| GET | `/api/admin/stats` | Dashboard stats (users/trips/reports/credits/top routes) |
 | GET | `/api/admin/companies` | List companies |
 | GET | `/api/admin/companies/:id` | Get company + its routes |
 | POST | `/api/admin/companies` | Create company |
@@ -345,6 +356,7 @@ User votes that the bus route has changed or is stuck. ≥3 `ruta_real` votes tr
 
 ### active_trips
 `id, user_id, route_id, current_latitude, current_longitude, destination_stop_id, started_at, last_location_at, ended_at, credits_earned, is_active`
+**Migrations added:** `total_distance_meters DECIMAL(10,2) DEFAULT 0` — accumulated on every `updateLocation` call via Haversine; used to gate the +5 completion bonus (requires ≥2 km)
 
 ### user_favorite_routes
 `id, user_id (→ users), route_id (→ routes), created_at` — `UNIQUE(user_id, route_id)`
@@ -366,6 +378,7 @@ User votes that the bus route has changed or is stuck. ≥3 `ruta_real` votes tr
 | `leave:route` | client → server | Leave route room when trip ends |
 | `route:new_report` | server → room | New report created on the route |
 | `route:report_confirmed` | server → room | Report confirmation count updated |
+| `route:report_resolved` | server → room | Report resolved — payload: `{ reportId, type, duration_minutes }` |
 
 ---
 
@@ -533,7 +546,9 @@ User votes that the bus route has changed or is stuck. ≥3 `ruta_real` votes tr
 
 **Docker:**
 - `web/Dockerfile.dev` — Node.js 20 Alpine, runs `npm run dev` (replaces nginx multi-stage that caused `npm: not found`)
-- `docker-compose.yml` uses `dockerfile: Dockerfile.dev` for web service
+- `backend/Dockerfile.dev` — Node.js 20 Alpine, `npm install` (all deps incl. devDeps), runs `npm run dev`
+- `docker-compose.yml` uses `dockerfile: Dockerfile.dev` for both web and backend services
+- Production deploy (Railway) uses `backend/Dockerfile` (multi-stage, `--omit=dev`, runs compiled JS)
 
 ### Phase 3.7 ✅ Complete
 
@@ -597,6 +612,46 @@ User votes that the bus route has changed or is stuck. ≥3 `ruta_real` votes tr
   - Toggle UI: **🔒 Solo nuevas** (default) / **🔄 Todas** — controls `importMode` state
   - Routes with `manually_edited_at` show `✏️ manual` amber badge in the table with tooltip date
   - Result messages show omitted count: "3 omitidas (editadas)"
+
+### Phase 3.9 ✅ Complete
+
+**Anti-fraud trip system:**
+- 5-minute cooldown between trips: `startTrip` queries last `ended_at` — returns 429 with `cooldown_seconds` if < 300 s
+- Completion bonus gated on distance: `+5 credits` only if `total_distance_meters >= 2000` (2 km); prevents fast re-board farming
+- New DB column `active_trips.total_distance_meters` — accumulated via `haversineMeters()` on every `updateLocation`
+- `endTrip` response includes `distance_meters` (rounded) and `completion_bonus_earned` (boolean)
+- `CatchBusMode.tsx` summary view shows distance (km if ≥1000 m) and note if < 2 km
+
+**Rate limiting (`express-rate-limit` v7):**
+- `authLimiter` (20 req / 15 min) — applied only to `POST /api/auth/login`, `POST /api/auth/register`, `POST /api/auth/google` (brute-force protection)
+- `reportLimiter` (15 req / 5 min) — applied to all `/api/reports` (spam prevention for credit farming)
+- `generalLimiter` (300 req / 1 min) — applied to all other route groups
+
+**Zombie trip cron:**
+- `setInterval` every 30 min in `index.ts` closes trips with `is_active = true` and no location update for > 4 hours
+- Also runs once at startup via `schema.ts` migration block
+
+**Trancón resolution notifications:**
+- `resolveReport` calculates `duration_minutes` from `resolved_at - created_at`
+- Emits `route:report_resolved` to Socket.io room `route:{route_id}` with `{ reportId, type, duration_minutes }`
+- Monitor 1 (auto-resolve) threshold raised 200 m → **1 km** — bus must move > 1 km from report location
+- Active trip socket: `route:report_resolved` removes report from list + shows toast with duration
+- Waiting view socket: new `useEffect` on `[view, selectedRoute?.id]` — joins/leaves route room, shows toast when trancón on the waited route is resolved
+
+**Admin stats dashboard:**
+- New page `/admin/stats` (`AdminStats.tsx`) — first page on admin login (sidebar Dashboard)
+- `GET /api/admin/stats` (admin): 6 parallel queries — users (total/active/premium/new_this_week), trips (total/today/this_week/active_now), reports (total/today/this_week), credits (earned_today/earned_total), active_now, top_routes last 24h
+- `adminApi.getStats()` in `api.ts`
+- `/admin` redirect changed to `/admin/stats`
+
+**Trip history page:**
+- New page `/trips/history` (`TripHistory.tsx`) — linked from `/profile`
+- `GET /api/trips/history`: last 20 completed trips with route info + `duration_minutes`
+- Shows: route code badge, route name, date, duration, credits earned
+
+**Referral code UI:**
+- `Register.tsx` shows optional referral code field — awards +25 credits to referrer
+- `Profile.tsx` shows user's own referral code with copy button
 
 ### Phase 4 — Future
 - React Native mobile app (early stage in `mobile/`)
