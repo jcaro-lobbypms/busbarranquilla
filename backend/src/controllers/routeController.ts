@@ -605,6 +605,7 @@ export const getRouteActivity = async (req: Request, res: Response): Promise<voi
         [id]
       ),
       // Viajes iniciados en la última hora (subidas y bajadas)
+      // Solo cuenta viajes finalizados que recorrieron ≥2 km (anti-ciclo)
       pool.query(
         `SELECT current_latitude AS lat, current_longitude AS lng,
                 ROUND(EXTRACT(EPOCH FROM (NOW() - started_at)) / 60)::int AS minutes_ago,
@@ -613,6 +614,7 @@ export const getRouteActivity = async (req: Request, res: Response): Promise<voi
          FROM active_trips
          WHERE route_id = $1
            AND started_at > NOW() - INTERVAL '1 hour'
+           AND (is_active = true OR total_distance_meters >= 2000)
          ORDER BY started_at DESC
          LIMIT 15`,
         [id]

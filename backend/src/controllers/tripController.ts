@@ -36,6 +36,25 @@ export const startTrip = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    // Cooldown de 5 minutos entre viajes
+    const lastTrip = await pool.query(
+      `SELECT ended_at FROM active_trips
+       WHERE user_id = $1 AND is_active = false AND ended_at IS NOT NULL
+       ORDER BY ended_at DESC LIMIT 1`,
+      [userId]
+    );
+    if (lastTrip.rows.length > 0) {
+      const secondsSinceEnd = (Date.now() - new Date(lastTrip.rows[0].ended_at).getTime()) / 1000;
+      if (secondsSinceEnd < 300) {
+        const remaining = Math.ceil((300 - secondsSinceEnd) / 60);
+        res.status(429).json({
+          message: `Espera ${remaining} min antes de iniciar otro viaje.`,
+          cooldown_seconds: Math.ceil(300 - secondsSinceEnd),
+        });
+        return;
+      }
+    }
+
     const result = await pool.query(
       `INSERT INTO active_trips (user_id, route_id, current_latitude, current_longitude, destination_stop_id)
        VALUES ($1, $2, $3, $4, $5)
@@ -99,37 +118,39 @@ export const updateLocation = async (req: Request, res: Response): Promise<void>
       trip.last_location_at === null ||
       new Date().getTime() - new Date(trip.last_location_at).getTime() >= creditThresholdMs;
 
-    // Chequeo de velocidad: si no se movió > 100m desde la última posición, no acumular
-    // (caminar o estar quieto no cuenta; paradas en semáforo breves sí se pierden pero es aceptable)
-    let isMovingFastEnough = true;
-    if (
-      shouldAccumulate &&
-      trip.current_latitude !== null &&
-      trip.current_longitude !== null
-    ) {
-      const dist = haversineMeters(
+    // Calcular distancia desde la última posición (se usa tanto para créditos como para total acumulado)
+    let distanceDelta = 0;
+    if (trip.current_latitude !== null && trip.current_longitude !== null) {
+      distanceDelta = haversineMeters(
         parseFloat(trip.current_latitude),
         parseFloat(trip.current_longitude),
         parseFloat(latitude),
         parseFloat(longitude)
       );
-      isMovingFastEnough = dist >= 100; // < 100m en ~30s ≈ < 12 km/h = no está en bus
     }
+
+    // Chequeo de velocidad: si no se movió > 100m desde la última posición, no acumular crédito
+    // (caminar o estar quieto no cuenta; paradas en semáforo breves sí se pierden pero es aceptable)
+    const isMovingFastEnough = trip.current_latitude === null || distanceDelta >= 100;
 
     let creditsEarned = trip.credits_earned;
     if (shouldAccumulate && isMovingFastEnough && creditsEarned < MAX_TRIP_LOCATION_CREDITS) {
       creditsEarned += 1;
     }
 
+    // Acumular distancia total siempre (independiente del timer de créditos)
+    const totalDistance = parseFloat(trip.total_distance_meters ?? '0') + distanceDelta;
+
     const updated = await pool.query(
       `UPDATE active_trips
        SET current_latitude = $1,
            current_longitude = $2,
            last_location_at = NOW(),
-           credits_earned = $3
-       WHERE id = $4
+           credits_earned = $3,
+           total_distance_meters = $4
+       WHERE id = $5
        RETURNING *`,
-      [latitude, longitude, creditsEarned, trip.id]
+      [latitude, longitude, creditsEarned, totalDistance, trip.id]
     );
 
     getIo().emit('bus:location', {
@@ -192,9 +213,14 @@ export const endTrip = async (req: Request, res: Response): Promise<void> => {
       await awardCredits(userId, finalCredits, 'earn', 'Créditos por transmitir ubicación en bus');
     }
 
-    await awardCredits(userId, 5, 'earn', 'Viaje completado');
+    // Bonus de completación solo si el usuario recorrió ≥2 km (anti-ciclo rápido)
+    const tripDistanceMeters = parseFloat(trip.total_distance_meters ?? '0');
+    const completionBonus = tripDistanceMeters >= 2000 ? 5 : 0;
+    if (completionBonus > 0) {
+      await awardCredits(userId, completionBonus, 'earn', 'Viaje completado');
+    }
 
-    const totalEarned = finalCredits + 10 + uncreditedRes.rows.length;
+    const totalEarned = finalCredits + completionBonus + uncreditedRes.rows.length;
 
     const updated = await pool.query(
       `UPDATE active_trips
@@ -212,6 +238,8 @@ export const endTrip = async (req: Request, res: Response): Promise<void> => {
     res.json({
       trip: updated.rows[0],
       totalCreditsEarned: updated.rows[0].credits_earned,
+      distance_meters: Math.round(tripDistanceMeters),
+      completion_bonus_earned: completionBonus > 0,
     });
 
   } catch (error) {

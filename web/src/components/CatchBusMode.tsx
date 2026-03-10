@@ -42,6 +42,8 @@ interface SummaryData {
   routeCode: string;
   elapsedSecs: number;
   credits: number;
+  distanceMeters?: number;
+  completionBonusEarned?: boolean;
   note?: string;
 }
 
@@ -787,6 +789,8 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
         routeCode: activeTrip?.route_code ?? '',
         elapsedSecs: elapsed,
         credits: res.data.totalCreditsEarned ?? creditsThisTrip,
+        distanceMeters: res.data.distance_meters,
+        completionBonusEarned: res.data.completion_bonus_earned,
       });
       clearAllIntervals();
       if (monitor1Ref.current) { clearInterval(monitor1Ref.current); monitor1Ref.current = null; }
@@ -1031,8 +1035,20 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
           <p className="text-sm text-gray-600">{summaryData.routeName}</p>
           <div className="flex justify-center gap-6 pt-1 text-sm">
             <span className="text-gray-500">⏱ {fmtTime(summaryData.elapsedSecs)}</span>
+            {summaryData.distanceMeters !== undefined && (
+              <span className="text-gray-500">
+                📍 {summaryData.distanceMeters >= 1000
+                  ? `${(summaryData.distanceMeters / 1000).toFixed(1)} km`
+                  : `${summaryData.distanceMeters} m`}
+              </span>
+            )}
             <span className="text-green-600 font-semibold">⚡ +{summaryData.credits} créditos</span>
           </div>
+          {summaryData.completionBonusEarned === false && (
+            <p className="text-xs text-gray-400 pt-1">
+              Recorre al menos 2 km para ganar el bono de completación (+5)
+            </p>
+          )}
         </div>
         <p className="text-sm text-gray-500 text-center">¿Cómo estuvo el servicio?</p>
         <div className="flex gap-2">

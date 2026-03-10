@@ -282,6 +282,13 @@ const createTables = async () => {
     `);
     console.log('✅ Columna reported_geometry en route_update_reports');
 
+    // Distancia total acumulada por viaje (para validar que recorrió ≥2 km)
+    await pool.query(`
+      ALTER TABLE active_trips
+        ADD COLUMN IF NOT EXISTS total_distance_meters DECIMAL(10,2) DEFAULT 0
+    `);
+    console.log('✅ Columna total_distance_meters en active_trips');
+
     // Cerrar viajes zombie (activos por más de 4 horas sin actualización de ubicación)
     const zombieClosed = await pool.query(`
       UPDATE active_trips
