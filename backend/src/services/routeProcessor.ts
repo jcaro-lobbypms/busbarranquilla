@@ -10,7 +10,12 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export interface ProcessResult {
   processed: number;
+  skipped: number;
   errors: number;
+}
+
+export interface ProcessOptions {
+  skipManuallyEdited?: boolean;
 }
 
 export interface ProcessProgress {
@@ -55,17 +60,19 @@ async function geocodeSegment(
 // ── Función principal exportada ───────────────────────────────────────────────
 
 export async function processImports(
-  onProgress?: (update: ProcessProgress) => void
+  onProgress?: (update: ProcessProgress) => void,
+  options: ProcessOptions = {}
 ): Promise<ProcessResult> {
-  const result: ProcessResult = { processed: 0, errors: 0 };
+  const result: ProcessResult = { processed: 0, skipped: 0, errors: 0 };
 
   const { rows: pending } = await pool.query<{
     id: number;
     name: string;
     description: string;
     code: string;
+    manually_edited_at: string | null;
   }>(
-    `SELECT id, name, description, code FROM routes
+    `SELECT id, name, description, code, manually_edited_at FROM routes
      WHERE status = 'pending' ORDER BY id`
   );
 
@@ -78,6 +85,13 @@ export async function processImports(
     const route = pending[i];
 
     onProgress?.({ total, current: i + 1, currentRoute: route.name, status: 'processing' });
+
+    // Omitir rutas editadas manualmente si así se solicitó
+    if (options.skipManuallyEdited && route.manually_edited_at !== null) {
+      console.log(`🔒 Omitida (editada manualmente): ${route.code}`);
+      result.skipped++;
+      continue;
+    }
 
     try {
       await pool.query(`UPDATE routes SET status='processing' WHERE id=$1`, [route.id]);

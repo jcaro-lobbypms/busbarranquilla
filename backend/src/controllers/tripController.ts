@@ -3,6 +3,17 @@ import pool from '../config/database';
 import { awardCredits } from './creditController';
 import { getIo } from '../config/socket';
 
+const MAX_TRIP_LOCATION_CREDITS = 15; // máx créditos por ubicación en un viaje (~15 min activos)
+
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 // Iniciar viaje (Me subí)
 export const startTrip = async (req: Request, res: Response): Promise<void> => {
   const { route_id, latitude, longitude, destination_stop_id } = req.body;
@@ -23,6 +34,25 @@ export const startTrip = async (req: Request, res: Response): Promise<void> => {
     if (existing.rows.length > 0) {
       res.status(400).json({ message: 'Ya tienes un viaje activo. Finalízalo antes de iniciar uno nuevo.' });
       return;
+    }
+
+    // Cooldown de 5 minutos entre viajes
+    const lastTrip = await pool.query(
+      `SELECT ended_at FROM active_trips
+       WHERE user_id = $1 AND is_active = false AND ended_at IS NOT NULL
+       ORDER BY ended_at DESC LIMIT 1`,
+      [userId]
+    );
+    if (lastTrip.rows.length > 0) {
+      const secondsSinceEnd = (Date.now() - new Date(lastTrip.rows[0].ended_at).getTime()) / 1000;
+      if (secondsSinceEnd < 300) {
+        const remaining = Math.ceil((300 - secondsSinceEnd) / 60);
+        res.status(429).json({
+          message: `Espera ${remaining} min antes de iniciar otro viaje.`,
+          cooldown_seconds: Math.ceil(300 - secondsSinceEnd),
+        });
+        return;
+      }
     }
 
     const result = await pool.query(
@@ -88,18 +118,39 @@ export const updateLocation = async (req: Request, res: Response): Promise<void>
       trip.last_location_at === null ||
       new Date().getTime() - new Date(trip.last_location_at).getTime() >= creditThresholdMs;
 
+    // Calcular distancia desde la última posición (se usa tanto para créditos como para total acumulado)
+    let distanceDelta = 0;
+    if (trip.current_latitude !== null && trip.current_longitude !== null) {
+      distanceDelta = haversineMeters(
+        parseFloat(trip.current_latitude),
+        parseFloat(trip.current_longitude),
+        parseFloat(latitude),
+        parseFloat(longitude)
+      );
+    }
+
+    // Chequeo de velocidad: si no se movió > 100m desde la última posición, no acumular crédito
+    // (caminar o estar quieto no cuenta; paradas en semáforo breves sí se pierden pero es aceptable)
+    const isMovingFastEnough = trip.current_latitude === null || distanceDelta >= 100;
+
     let creditsEarned = trip.credits_earned;
-    if (shouldAccumulate) creditsEarned += 1;
+    if (shouldAccumulate && isMovingFastEnough && creditsEarned < MAX_TRIP_LOCATION_CREDITS) {
+      creditsEarned += 1;
+    }
+
+    // Acumular distancia total siempre (independiente del timer de créditos)
+    const totalDistance = parseFloat(trip.total_distance_meters ?? '0') + distanceDelta;
 
     const updated = await pool.query(
       `UPDATE active_trips
        SET current_latitude = $1,
            current_longitude = $2,
            last_location_at = NOW(),
-           credits_earned = $3
-       WHERE id = $4
+           credits_earned = $3,
+           total_distance_meters = $4
+       WHERE id = $5
        RETURNING *`,
-      [latitude, longitude, creditsEarned, trip.id]
+      [latitude, longitude, creditsEarned, totalDistance, trip.id]
     );
 
     getIo().emit('bus:location', {
@@ -141,11 +192,12 @@ export const endTrip = async (req: Request, res: Response): Promise<void> => {
     // Descontar minutos sospechosos del acumulado (mínimo 0)
     const finalCredits = Math.max(0, trip.credits_earned - suspiciousMinutes);
 
-    // Auto-award +1 por reportes sin confirmación durante el viaje
+    // Auto-award +1 por reportes sin confirmación durante el viaje (máx 2)
     const uncreditedRes = await pool.query(
       `SELECT id FROM reports
        WHERE user_id = $1 AND credits_awarded_to_reporter = false
-         AND created_at >= $2 AND is_active = true`,
+         AND created_at >= $2 AND is_active = true
+       LIMIT 2`,
       [userId, trip.started_at]
     );
     for (const r of uncreditedRes.rows) {
@@ -161,9 +213,14 @@ export const endTrip = async (req: Request, res: Response): Promise<void> => {
       await awardCredits(userId, finalCredits, 'earn', 'Créditos por transmitir ubicación en bus');
     }
 
-    await awardCredits(userId, 10, 'earn', 'Viaje completado');
+    // Bonus de completación solo si el usuario recorrió ≥2 km (anti-ciclo rápido)
+    const tripDistanceMeters = parseFloat(trip.total_distance_meters ?? '0');
+    const completionBonus = tripDistanceMeters >= 2000 ? 5 : 0;
+    if (completionBonus > 0) {
+      await awardCredits(userId, completionBonus, 'earn', 'Viaje completado');
+    }
 
-    const totalEarned = finalCredits + 10 + uncreditedRes.rows.length;
+    const totalEarned = finalCredits + completionBonus + uncreditedRes.rows.length;
 
     const updated = await pool.query(
       `UPDATE active_trips
@@ -181,6 +238,8 @@ export const endTrip = async (req: Request, res: Response): Promise<void> => {
     res.json({
       trip: updated.rows[0],
       totalCreditsEarned: updated.rows[0].credits_earned,
+      distance_meters: Math.round(tripDistanceMeters),
+      completion_bonus_earned: completionBonus > 0,
     });
 
   } catch (error) {
@@ -250,6 +309,30 @@ export const getTripCurrent = async (req: Request, res: Response): Promise<void>
 
   } catch (error) {
     console.error('Error obteniendo viaje actual:', error);
+    res.status(500).json({ message: 'Error interno del servidor' });
+  }
+};
+
+// Historial de viajes finalizados del usuario autenticado
+export const getTripHistory = async (req: Request, res: Response): Promise<void> => {
+  const userId = (req as any).userId as number;
+
+  try {
+    const result = await pool.query(
+      `SELECT at.id, at.route_id, r.name AS route_name, r.code AS route_code,
+              at.started_at, at.ended_at, at.credits_earned,
+              ROUND(EXTRACT(EPOCH FROM (at.ended_at - at.started_at))/60) AS duration_minutes
+       FROM active_trips at
+       LEFT JOIN routes r ON r.id = at.route_id
+       WHERE at.user_id = $1 AND at.is_active = false AND at.ended_at IS NOT NULL
+       ORDER BY at.started_at DESC
+       LIMIT 20`,
+      [userId]
+    );
+
+    res.json({ trips: result.rows });
+  } catch (error) {
+    console.error('Error obteniendo historial de viajes:', error);
     res.status(500).json({ message: 'Error interno del servidor' });
   }
 };

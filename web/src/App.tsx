@@ -8,11 +8,16 @@ import Register from './pages/Register';
 import Map from './pages/Map';
 import PremiumPage from './pages/PremiumPage';
 import PaymentResultPage from './pages/PaymentResultPage';
+import Profile from './pages/Profile';
+import TripHistory from './pages/TripHistory';
+import BusPage from './pages/BusPage';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminCompanies from './pages/admin/AdminCompanies';
 import AdminTransmetro from './pages/admin/AdminTransmetro';
 import AdminBuses from './pages/admin/AdminBuses';
+import AdminRouteAlerts from './pages/admin/AdminRouteAlerts';
+import AdminStats from './pages/admin/AdminStats';
 
 function PublicLayout() {
   return <><Navbar /><Outlet /></>;
@@ -39,6 +44,9 @@ function AppRoutes() {
         <Route path="/" element={<Home />} />
         <Route path="/map" element={<Map />} />
         <Route path="/premium" element={<PremiumPage />} />
+        <Route path="/profile" element={<Profile />} />
+        <Route path="/trips/history" element={<TripHistory />} />
+        <Route path="/bus/:id" element={<BusPage />} />
         <Route path="/payment/result" element={<PaymentResultPage />} />
         <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
         <Route path="/register" element={user ? <Navigate to="/" replace /> : <Register />} />
@@ -48,11 +56,13 @@ function AppRoutes() {
       {/* Layout admin — con AdminRoute guard + AdminLayout sidebar */}
       <Route element={<AdminRoute />}>
         <Route element={<AdminLayout />}>
-          <Route path="/admin" element={<Navigate to="/admin/buses" replace />} />
+          <Route path="/admin" element={<Navigate to="/admin/stats" replace />} />
+          <Route path="/admin/stats" element={<AdminStats />} />
           <Route path="/admin/users" element={<AdminUsers />} />
           <Route path="/admin/companies" element={<AdminCompanies />} />
           <Route path="/admin/buses" element={<AdminBuses />} />
           <Route path="/admin/transmetro" element={<AdminTransmetro />} />
+          <Route path="/admin/route-alerts" element={<AdminRouteAlerts />} />
         </Route>
       </Route>
     </Routes>

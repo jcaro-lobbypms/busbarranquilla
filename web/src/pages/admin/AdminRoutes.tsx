@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { routesApi, stopsApi, adminApi } from '../../services/api';
@@ -18,6 +19,7 @@ interface Route {
   frequency_minutes: number | null;
   is_active: boolean;
   status: string | null;
+  manually_edited_at: string | null;
 }
 
 interface Company {
@@ -192,6 +194,7 @@ function Step1Form({ form, onChange, companies, loadingCompanies }: Step1FormPro
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function AdminRoutes() {
+  const [searchParams] = useSearchParams();
 
   // ── Route list state ────────────────────────────────────────────────────────
   const [routes, setRoutes] = useState<Route[]>([]);
@@ -204,6 +207,7 @@ export default function AdminRoutes() {
   const dropdownRef = useRef<HTMLDivElement | null>(null);
   const [scanLoading, setScanLoading] = useState(false);
   const [scanResult, setScanResult] = useState<string | null>(null);
+  const [importMode, setImportMode] = useState<'all' | 'skip_manual'>('skip_manual');
   const [scanProgress, setScanProgress] = useState<{
     total: number;
     current: number;
@@ -233,6 +237,9 @@ export default function AdminRoutes() {
   const [isEditingGeometry, setIsEditingGeometry] = useState(false);
   const [osrmGeometry, setOsrmGeometry] = useState<[number, number][] | null>(null);
   const [geomBeforeEdit, setGeomBeforeEdit] = useState<[number, number][] | null>(null);
+  // Waypoints: puntos de control que el admin arrastra (pocos, extraídos de la geometría)
+  const [waypoints, setWaypoints] = useState<[number, number][] | null>(null);
+  const [snapping, setSnapping] = useState(false);
 
   // ── Step 2 — map ────────────────────────────────────────────────────────────
   const [mapReady, setMapReady] = useState(false);
@@ -251,6 +258,11 @@ export default function AdminRoutes() {
   const geomMarkersRef = useRef<L.Marker[]>([]);
   const geomPolylineRef = useRef<L.Polyline | null>(null);
   const isEditingGeometryRef = useRef(false);
+  const waypointsRef = useRef<[number, number][] | null>(null);
+  const refTrackLayersRef = useRef<L.Polyline[]>([]); // tracks de referencia GPS de reportantes
+  const autoOpenHandledRef = useRef(false); // evita re-abrir al recargar rutas
+  const [refTracks, setRefTracks] = useState<{ user_name: string; geometry: [number, number][] }[]>([]);
+  const [showRefTracks, setShowRefTracks] = useState(true);
 
   // Cerrar dropdown al hacer click fuera
   useEffect(() => {
@@ -301,6 +313,32 @@ export default function AdminRoutes() {
     loadPendingCount();
   }, [loadRoutes, loadPendingCount]);
 
+  // ── Auto-abrir ruta en editor si viene desde AlertaRoutes ─────────────────
+  useEffect(() => {
+    const editRouteId = searchParams.get('editRoute');
+    if (!editRouteId || routes.length === 0 || autoOpenHandledRef.current) return;
+
+    const target = routes.find(r => r.id === Number(editRouteId));
+    if (!target) return;
+
+    autoOpenHandledRef.current = true; // solo una vez aunque routes recargue
+
+    // Cargar tracks de referencia del sessionStorage
+    try {
+      const stored = sessionStorage.getItem('admin_route_ref_tracks');
+      if (stored) {
+        const data = JSON.parse(stored) as { routeId: number; tracks: { user_name: string; geometry: [number, number][] }[] };
+        if (data.routeId === target.id && data.tracks?.length > 0) {
+          setRefTracks(data.tracks);
+          setShowRefTracks(true);
+        }
+      }
+    } catch { /* ignorar */ }
+
+    openEditModal(target, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routes, searchParams]);
+
   // ── Load companies when modal opens ────────────────────────────────────────
 
   useEffect(() => {
@@ -329,7 +367,7 @@ export default function AdminRoutes() {
     setModalOpen(true);
   }
 
-  async function openEditModal(route: Route) {
+  async function openEditModal(route: Route, autoStartGeomEdit = false) {
     setEditingRoute(route);
     setForm({
       name: route.name,
@@ -347,10 +385,11 @@ export default function AdminRoutes() {
     setGeomBeforeEdit(null);
 
     // Load existing geometry from backend
+    let geom: [number, number][] | null = null;
     try {
       const res = await routesApi.getById(route.id);
       const fullRoute = res.data.route as { geometry?: [number, number][] | null };
-      const geom = fullRoute.geometry && fullRoute.geometry.length >= 2 ? fullRoute.geometry : null;
+      geom = fullRoute.geometry && fullRoute.geometry.length >= 2 ? fullRoute.geometry : null;
       setOsrmGeometry(geom);
       setCustomGeometry(geom);
     } catch {
@@ -359,6 +398,17 @@ export default function AdminRoutes() {
     }
 
     setModalOpen(true);
+
+    // Si viene desde Alertas con tracks de referencia, abrir editor directamente
+    if (autoStartGeomEdit) {
+      const wpts = geom ? extractWaypoints(geom) : [];
+      setGeomBeforeEdit(geom);
+      setWaypoints(wpts);
+      waypointsRef.current = wpts;
+      setIsEditingGeometry(true);
+      // Navegar directamente al paso 2 (geometría)
+      setStep(2);
+    }
   }
 
   function closeModal() {
@@ -374,6 +424,8 @@ export default function AdminRoutes() {
     setOsrmGeometry(null);
     setIsEditingGeometry(false);
     setGeomBeforeEdit(null);
+    setRefTracks([]);
+    sessionStorage.removeItem('admin_route_ref_tracks');
   }
 
   const canNext = form.name.trim() !== '' && form.code.trim() !== '';
@@ -466,6 +518,31 @@ export default function AdminRoutes() {
     setStops(prev => prev.filter(s => s.id !== id));
   }
 
+  // ── Waypoint helpers ───────────────────────────────────────────────────────
+
+  function extractWaypoints(geometry: [number, number][], targetCount = 12): [number, number][] {
+    if (geometry.length <= targetCount) return [...geometry];
+    const result: [number, number][] = [];
+    const step = (geometry.length - 1) / (targetCount - 1);
+    for (let i = 0; i < targetCount; i++) {
+      result.push(geometry[Math.round(i * step)]);
+    }
+    return result;
+  }
+
+  const snapAndUpdate = useCallback(async (wpts: [number, number][]) => {
+    setSnapping(true);
+    try {
+      const res = await routesApi.snapWaypoints(wpts);
+      setCustomGeometry(res.data.geometry as [number, number][]);
+    } catch {
+      // Fallback: usar los waypoints directamente si OSRM falla
+      setCustomGeometry(wpts);
+    } finally {
+      setSnapping(false);
+    }
+  }, []);
+
   // ── Map initialization ─────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -502,11 +579,12 @@ export default function AdminRoutes() {
           );
           setLocatingStop(null);
         } else if (isEditingGeometryRef.current) {
-          // Geometry edit mode — add point
-          setCustomGeometry(prev => [
-            ...(prev ?? []),
-            [e.latlng.lat, e.latlng.lng] as [number, number],
-          ]);
+          // Geometry edit mode — add waypoint and snap to roads
+          const newWpt: [number, number] = [e.latlng.lat, e.latlng.lng];
+          const newWaypoints = [...(waypointsRef.current ?? []), newWpt];
+          setWaypoints(newWaypoints);
+          waypointsRef.current = newWaypoints;
+          snapAndUpdate(newWaypoints);
         } else {
           // Default — add stop
           setStops(prev => [
@@ -645,6 +723,30 @@ export default function AdminRoutes() {
     }
   }, [stops, mapReady, isEditingGeometry]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Render reference tracks (GPS reportado por usuarios) ──────────────────
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    // Limpiar tracks anteriores
+    refTrackLayersRef.current.forEach(l => l.remove());
+    refTrackLayersRef.current = [];
+
+    if (!isEditingGeometry || !showRefTracks) return;
+
+    const COLORS = ['#F97316', '#FB923C', '#EA580C', '#C2410C', '#FED7AA'];
+    refTracks.forEach((track, idx) => {
+      if (!track.geometry || track.geometry.length < 2) return;
+      const latlngs = track.geometry.map(([lat, lng]) => [lat, lng] as L.LatLngTuple);
+      const color = COLORS[idx % COLORS.length];
+      const layer = L.polyline(latlngs, { color, weight: 4, opacity: 0.75, dashArray: '8,5' })
+        .bindTooltip(`Track GPS: ${track.user_name}`, { sticky: true, direction: 'top' })
+        .addTo(map);
+      refTrackLayersRef.current.push(layer);
+    });
+  }, [isEditingGeometry, mapReady, refTracks, showRefTracks]);
+
   // ── Render geometry on map ─────────────────────────────────────────────────
 
   useEffect(() => {
@@ -659,41 +761,45 @@ export default function AdminRoutes() {
       geomPolylineRef.current = null;
     }
 
-    if (isEditingGeometry && customGeometry && customGeometry.length >= 1) {
-      // Draggable gray point markers — click to delete (min 2 remaining)
-      customGeometry.forEach(([lat, lng], idx) => {
+    if (isEditingGeometry && waypoints && waypoints.length >= 1) {
+      // Draggable orange waypoint markers — drag to snap to roads, click to delete
+      waypoints.forEach(([lat, lng], idx) => {
         const icon = L.divIcon({
           className: '',
-          html: `<div style="background:#6B7280;width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,0.5);cursor:pointer;"></div>`,
-          iconSize: [14, 14],
-          iconAnchor: [7, 7],
+          html: `<div style="background:#F59E0B;width:22px;height:22px;border-radius:50%;border:3px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.5);cursor:grab;display:flex;align-items:center;justify-content:center;">
+            <span style="color:white;font-size:9px;font-weight:bold;line-height:1;">${idx + 1}</span>
+          </div>`,
+          iconSize: [22, 22],
+          iconAnchor: [11, 11],
         });
 
         const marker = L.marker([lat, lng], { icon, draggable: true });
 
         marker.on('dragend', () => {
           const { lat: newLat, lng: newLng } = marker.getLatLng();
-          setCustomGeometry(prev => {
-            if (!prev) return prev;
-            const next = [...prev] as [number, number][];
-            next[idx] = [newLat, newLng];
-            return next;
-          });
+          const newWaypoints = [...(waypointsRef.current ?? [])] as [number, number][];
+          newWaypoints[idx] = [newLat, newLng];
+          setWaypoints(newWaypoints);
+          waypointsRef.current = newWaypoints;
+          snapAndUpdate(newWaypoints);
         });
 
-        marker.on('click', () => {
-          setCustomGeometry(prev => {
-            if (!prev || prev.length <= 2) return prev;
-            return prev.filter((_, i) => i !== idx);
-          });
+        marker.on('click', (e: L.LeafletMouseEvent) => {
+          L.DomEvent.stopPropagation(e);
+          const current = waypointsRef.current ?? [];
+          if (current.length <= 2) return;
+          const newWaypoints = current.filter((_, i) => i !== idx) as [number, number][];
+          setWaypoints(newWaypoints);
+          waypointsRef.current = newWaypoints;
+          snapAndUpdate(newWaypoints);
         });
 
         marker.addTo(map);
         geomMarkersRef.current.push(marker);
       });
 
-      // Blue polyline while editing
-      if (customGeometry.length >= 2) {
+      // Blue polyline (OSRM-snapped, many points) while editing
+      if (customGeometry && customGeometry.length >= 2) {
         geomPolylineRef.current = L.polyline(
           customGeometry.map(([lat, lng]) => [lat, lng] as L.LatLngTuple),
           { color: '#3B82F6', weight: 3, opacity: 0.9 }
@@ -706,7 +812,7 @@ export default function AdminRoutes() {
         { color: '#10B981', weight: 4, opacity: 0.8 }
       ).addTo(map);
     }
-  }, [isEditingGeometry, customGeometry, mapReady]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isEditingGeometry, customGeometry, waypoints, mapReady, snapAndUpdate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Save route (create or edit) ────────────────────────────────────────────
 
@@ -811,14 +917,15 @@ export default function AdminRoutes() {
       current: number;
       currentRoute: string;
       status: 'scanning' | 'done';
-      result?: { new: number; updated: number; unchanged: number; errors: number };
+      result?: { new: number; updated: number; unchanged: number; skipped: number; errors: number };
     }) => {
       if (data.status === 'done') {
         setScanProgress(null);
         const r = data.result!;
+        const skippedMsg = r.skipped > 0 ? `, ${r.skipped} omitidas (editadas)` : '';
         setScanResult(
           `✅ Escaneo: ${r.new} nuevas, ${r.updated} actualizadas, ` +
-          `${r.unchanged} sin cambios, ${r.errors} error${r.errors !== 1 ? 'es' : ''}`
+          `${r.unchanged} sin cambios${skippedMsg}, ${r.errors} error${r.errors !== 1 ? 'es' : ''}`
         );
       } else {
         setScanProgress({ total: data.total, current: data.current, currentRoute: data.currentRoute, status: data.status });
@@ -826,7 +933,7 @@ export default function AdminRoutes() {
     });
 
     try {
-      await routesApi.scanBlog();
+      await routesApi.scanBlog(importMode === 'skip_manual');
       await loadRoutes();
       await loadPendingCount();
     } catch {
@@ -858,8 +965,9 @@ export default function AdminRoutes() {
       if (data.status === 'done') {
         setScanProgress(null);
         const r = data.result!;
+        const skippedMsg = (r as any).skipped > 0 ? `, ${(r as any).skipped} omitidas (editadas)` : '';
         setScanResult(
-          `✅ Procesamiento: ${r.processed} listas, ${r.errors} error${r.errors !== 1 ? 'es' : ''}`
+          `✅ Procesamiento: ${r.processed} listas${skippedMsg}, ${r.errors} error${r.errors !== 1 ? 'es' : ''}`
         );
       } else {
         setScanProgress({ total: data.total, current: data.current, currentRoute: data.currentRoute, status: data.status });
@@ -875,7 +983,7 @@ export default function AdminRoutes() {
     });
 
     try {
-      await routesApi.processImports();
+      await routesApi.processImports(importMode === 'skip_manual');
       await loadRoutes();
       await loadPendingCount();
     } catch {
@@ -922,6 +1030,31 @@ export default function AdminRoutes() {
       <div className="flex items-center justify-between mb-2">
         <h1 className="text-2xl font-bold text-gray-900">Rutas</h1>
         <div className="flex items-center gap-2">
+          {/* Import mode selector */}
+          <div className="flex items-center bg-gray-100 rounded-lg p-0.5 text-xs font-medium">
+            <button
+              onClick={() => setImportMode('skip_manual')}
+              className={`px-2.5 py-1.5 rounded-md transition-colors ${
+                importMode === 'skip_manual'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+              title="No sobreescribir rutas editadas manualmente"
+            >
+              🔒 Solo nuevas
+            </button>
+            <button
+              onClick={() => setImportMode('all')}
+              className={`px-2.5 py-1.5 rounded-md transition-colors ${
+                importMode === 'all'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+              title="Actualizar todas las rutas, incluyendo las editadas manualmente"
+            >
+              🔄 Todas
+            </button>
+          </div>
           <button
             onClick={handleScanBlog}
             disabled={scanLoading}
@@ -1006,7 +1139,19 @@ export default function AdminRoutes() {
                   <td className="px-4 py-3 font-mono font-semibold text-blue-700">
                     {route.code}
                   </td>
-                  <td className="px-4 py-3 text-gray-900">{route.name}</td>
+                  <td className="px-4 py-3 text-gray-900">
+                    <span className="flex items-center gap-1.5">
+                      {route.name}
+                      {route.manually_edited_at && (
+                        <span
+                          title={`Editada manualmente el ${new Date(route.manually_edited_at).toLocaleDateString('es-CO')}`}
+                          className="inline-flex items-center gap-0.5 bg-amber-100 text-amber-700 text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0"
+                        >
+                          ✏️ manual
+                        </span>
+                      )}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 text-gray-500">
                     {route.company_name ?? route.company ?? '—'}
                   </td>
@@ -1240,18 +1385,36 @@ export default function AdminRoutes() {
 
                       {isEditingGeometry ? (
                         <div className="space-y-1.5">
-                          <p className="text-xs text-gray-500 mb-2">
-                            {customGeometry?.length ?? 0} puntos · click en mapa para añadir · click en punto para eliminar
+                          <p className="text-xs text-gray-400 mb-2 leading-tight">
+                            {snapping
+                              ? '⏳ Calculando ruta por calles…'
+                              : `${waypoints?.length ?? 0} puntos naranjas · arrastra para seguir calles · clic en mapa para añadir · clic en punto para eliminar`
+                            }
                           </p>
+                          {refTracks.length > 0 && (
+                            <button
+                              onClick={() => setShowRefTracks(v => !v)}
+                              className="w-full text-xs bg-orange-900/50 hover:bg-orange-800/60 text-orange-300 font-medium px-3 py-1.5 rounded-lg transition-colors"
+                            >
+                              {showRefTracks ? '🟠 Ocultar' : '🟠 Mostrar'} track{refTracks.length > 1 ? 's' : ''} GPS ({refTracks.length})
+                            </button>
+                          )}
                           <button
                             onClick={() => setIsEditingGeometry(false)}
-                            className="w-full text-xs bg-emerald-700 hover:bg-emerald-600 text-white font-medium px-3 py-2 rounded-lg transition-colors"
+                            disabled={snapping}
+                            className="w-full text-xs bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white font-medium px-3 py-2 rounded-lg transition-colors"
                           >
                             ✅ Guardar trazado
                           </button>
                           <button
-                            onClick={() => setCustomGeometry(osrmGeometry)}
-                            className="w-full text-xs bg-gray-600 hover:bg-gray-500 text-gray-200 font-medium px-3 py-2 rounded-lg transition-colors"
+                            onClick={() => {
+                              setCustomGeometry(osrmGeometry);
+                              const wpts = osrmGeometry ? extractWaypoints(osrmGeometry) : [];
+                              setWaypoints(wpts);
+                              waypointsRef.current = wpts;
+                            }}
+                            disabled={snapping}
+                            className="w-full text-xs bg-gray-600 hover:bg-gray-500 disabled:opacity-50 text-gray-200 font-medium px-3 py-2 rounded-lg transition-colors"
                           >
                             🔄 Resetear a OSRM
                           </button>
@@ -1259,6 +1422,8 @@ export default function AdminRoutes() {
                             onClick={() => {
                               setCustomGeometry(geomBeforeEdit);
                               setIsEditingGeometry(false);
+                              setWaypoints(null);
+                              waypointsRef.current = null;
                             }}
                             className="w-full text-xs bg-gray-700 hover:bg-gray-600 text-gray-400 font-medium px-3 py-2 rounded-lg transition-colors"
                           >
@@ -1269,11 +1434,14 @@ export default function AdminRoutes() {
                         <button
                           onClick={() => {
                             setGeomBeforeEdit(customGeometry);
+                            const wpts = customGeometry ? extractWaypoints(customGeometry) : [];
+                            setWaypoints(wpts);
+                            waypointsRef.current = wpts;
                             setIsEditingGeometry(true);
                           }}
                           className="w-full text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 font-medium px-3 py-2 rounded-lg transition-colors"
                         >
-                          ✏️ Editar trazado
+                          ✏️ Editar trazado por calles
                         </button>
                       )}
                     </div>

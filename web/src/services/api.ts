@@ -19,11 +19,17 @@ api.interceptors.request.use((config) => {
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
 export const authApi = {
-  register: (data: { name: string; email: string; password: string; phone?: string }) =>
+  register: (data: { name: string; email: string; password: string; phone?: string; referralCode?: string }) =>
     api.post('/api/auth/register', data),
 
   login: (data: { email: string; password: string }) =>
     api.post('/api/auth/login', data),
+
+  googleLogin: (idToken: string) =>
+    api.post('/api/auth/google', { idToken }),
+
+  updateProfile: (data: { name: string }) =>
+    api.patch('/api/auth/profile', data),
 
   getProfile: () =>
     api.get('/api/auth/profile'),
@@ -88,11 +94,23 @@ export const routesApi = {
   toggleActive: (id: number) =>
     api.patch(`/api/routes/${id}/toggle`),
 
-  scanBlog: () =>
-    api.post('/api/admin/routes/scan-blog'),
+  getActivity: (id: number) =>
+    api.get(`/api/routes/${id}/activity`),
 
-  processImports: () =>
-    api.post('/api/admin/routes/process-imports'),
+  reportUpdate: (id: number, tipo: 'ruta_real' | 'trancon', geometry?: [number, number][]) =>
+    api.post(`/api/routes/${id}/update-report`, { tipo, geometry }),
+
+  applyReportedGeometry: (id: number, geometry: [number, number][]) =>
+    api.patch(`/api/routes/${id}/apply-reported-geometry`, { geometry }),
+
+  snapWaypoints: (waypoints: [number, number][]) =>
+    api.post('/api/routes/snap-waypoints', { waypoints }),
+
+  scanBlog: (skipManuallyEdited = false) =>
+    api.post('/api/admin/routes/scan-blog', { skipManuallyEdited }),
+
+  processImports: (skipManuallyEdited = false) =>
+    api.post('/api/admin/routes/process-imports', { skipManuallyEdited }),
 
   getPendingCount: () =>
     api.get('/api/admin/routes/pending-count'),
@@ -108,6 +126,19 @@ export const routesApi = {
 
   getBusRoutes: () =>
     api.get('/api/admin/buses'),
+};
+
+// ─── Route Update Alerts ──────────────────────────────────────────────────────
+
+export const routeAlertsApi = {
+  getAlerts: () =>
+    api.get('/api/routes/update-alerts'),
+
+  getAlertsCount: () =>
+    api.get('/api/routes/update-alerts/count'),
+
+  dismissAlert: (routeId: number) =>
+    api.patch(`/api/routes/${routeId}/dismiss-alert`),
 };
 
 // ─── Stops ───────────────────────────────────────────────────────────────────
@@ -138,6 +169,8 @@ export const adminApi = {
     api.get('/api/admin/companies', {
       params: isActive !== undefined ? { is_active: isActive } : undefined,
     }),
+  getStats: () =>
+    api.get('/api/admin/stats'),
 };
 
 // ─── Reports ─────────────────────────────────────────────────────────────────
@@ -183,6 +216,9 @@ export const creditsApi = {
   getHistory: (limit = 20, offset = 0) =>
     api.get('/api/credits/history', { params: { limit, offset } }),
 
+  getStats: () =>
+    api.get('/api/credits/stats'),
+
   spend: (data: { amount: number; feature: string; description: string }) =>
     api.post('/api/credits/spend', data),
 };
@@ -200,6 +236,9 @@ export const paymentsApi = {
 // ─── Trips ───────────────────────────────────────────────────────────────────
 
 export const tripsApi = {
+  getHistory: () =>
+    api.get('/api/trips/history'),
+
   getActive: () =>
     api.get('/api/trips/active'),
 
@@ -224,6 +263,9 @@ export const tripsApi = {
 export const usersApi = {
   getFavorites: () =>
     api.get('/api/users/favorites'),
+
+  getReferral: () =>
+    api.get('/api/users/referral'),
 
   addFavorite: (routeId: number) =>
     api.post('/api/users/favorites', { route_id: routeId }),

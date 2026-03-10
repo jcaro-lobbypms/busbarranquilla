@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import pool from '../config/database';
 import { awardCredits } from './creditController';
 import { getIo } from '../config/socket';
+import { getRedisClient } from '../config/redis';
 
 const VALID_TYPES = [
   'bus_location', 'traffic', 'bus_full', 'no_service', 'detour',
@@ -24,6 +25,10 @@ const CREDITS_BY_TYPE: Record<string, number> = {
 };
 
 const OCCUPANCY_TYPES: string[] = ['lleno', 'bus_disponible'];
+const REPORT_RATE_LIMIT_PER_HOUR = 5;
+const REPORT_ROUTE_TYPE_LIMIT_PER_HOUR = 2;
+const REPORT_RATE_LIMIT_TTL_SECONDS = 3600;
+const REPORT_RATE_LIMIT_MESSAGE = 'Límite de reportes alcanzado. Espera antes de reportar de nuevo.';
 // Distancia máxima a parada más cercana para reportes válidos
 const GEO_MAX_METERS: Record<string, number> = {
   lleno: 300,
@@ -101,6 +106,9 @@ async function computeOccupancy(routeId: number): Promise<{
 export const createReport = async (req: Request, res: Response): Promise<void> => {
   const { route_id, type, latitude, longitude, description } = req.body;
   const userId = (req as any).userId;
+  let globalRateKey: string | null = null;
+  let routeTypeRateKey: string | null = null;
+  let reportCreated = false;
 
   if (!type || latitude === undefined || longitude === undefined) {
     res.status(400).json({ message: 'type, latitude y longitude son obligatorios' });
@@ -167,6 +175,32 @@ export const createReport = async (req: Request, res: Response): Promise<void> =
       }
     }
 
+    // ── Rate limit por usuario y por tipo/ruta usando Redis ───────────────
+    const redis = await getRedisClient();
+    if (redis) {
+      globalRateKey = `rate:report:${userId}`;
+      const globalCount = await redis.incr(globalRateKey);
+      await redis.expire(globalRateKey, REPORT_RATE_LIMIT_TTL_SECONDS, 'NX');
+
+      if (globalCount > REPORT_RATE_LIMIT_PER_HOUR) {
+        await redis.decr(globalRateKey);
+        res.status(429).json({ message: REPORT_RATE_LIMIT_MESSAGE });
+        return;
+      }
+
+      if (route_id) {
+        routeTypeRateKey = `rate:report:${userId}:${route_id}:${type}`;
+        const routeTypeCount = await redis.incr(routeTypeRateKey);
+        await redis.expire(routeTypeRateKey, REPORT_RATE_LIMIT_TTL_SECONDS, 'NX');
+
+        if (routeTypeCount > REPORT_ROUTE_TYPE_LIMIT_PER_HOUR) {
+          await redis.multi().decr(globalRateKey).decr(routeTypeRateKey).exec();
+          res.status(429).json({ message: REPORT_RATE_LIMIT_MESSAGE });
+          return;
+        }
+      }
+    }
+
     // ── Calcular créditos y si se otorgan ahora ───────────────────────────
     let creditsEarned = 0;
     let creditsAwardedToReporter = false;
@@ -196,6 +230,37 @@ export const createReport = async (req: Request, res: Response): Promise<void> =
     );
 
     const report = result.rows[0];
+    reportCreated = true;
+
+    // ── Actualizar racha de reportes diarios (P1-2) ───────────────────────
+    const today = new Date().toISOString().split('T')[0];
+    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    const userRes = await pool.query(
+      'SELECT last_report_date, report_streak FROM users WHERE id = $1',
+      [userId]
+    );
+
+    const lastReportDateRaw = userRes.rows[0]?.last_report_date as string | Date | null | undefined;
+    const lastReportDate = !lastReportDateRaw
+      ? null
+      : (lastReportDateRaw instanceof Date
+        ? lastReportDateRaw.toISOString().split('T')[0]
+        : String(lastReportDateRaw).split('T')[0]);
+    const currentStreak = Number(userRes.rows[0]?.report_streak ?? 0);
+
+    let newStreak = 1;
+    if (lastReportDate === yesterday) newStreak = currentStreak + 1;
+    else if (lastReportDate === today) newStreak = currentStreak;
+
+    await pool.query(
+      'UPDATE users SET last_report_date = $1, report_streak = $2 WHERE id = $3',
+      [today, newStreak, userId]
+    );
+
+    // Solo premiar cuando la racha avanza respecto a ayer (evita duplicar bonus en el mismo día)
+    if (lastReportDate === yesterday && newStreak > 0 && newStreak % 7 === 0) {
+      await awardCredits(userId, 30, 'streak', `🔥 ¡Racha de ${newStreak} días! Bonus de créditos`);
+    }
 
     // ── Emitir evento en tiempo real a los demás usuarios de la ruta ─────
     if (route_id) {
@@ -218,6 +283,15 @@ export const createReport = async (req: Request, res: Response): Promise<void> =
     });
 
   } catch (error) {
+    if (!reportCreated && globalRateKey) {
+      const redis = await getRedisClient();
+      if (redis) {
+        await redis.decr(globalRateKey).catch(() => {});
+        if (routeTypeRateKey) {
+          await redis.decr(routeTypeRateKey).catch(() => {});
+        }
+      }
+    }
     console.error('Error creando reporte:', error);
     res.status(500).json({ message: 'Error interno del servidor' });
   }
@@ -285,7 +359,7 @@ export const resolveReport = async (req: Request, res: Response): Promise<void> 
       `UPDATE reports
        SET is_active = false, resolved_at = NOW()
        WHERE id = $1 AND user_id = $2
-       RETURNING id`,
+       RETURNING id, type, route_id, created_at, resolved_at`,
       [id, userId]
     );
 
@@ -294,7 +368,20 @@ export const resolveReport = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    res.json({ message: 'Reporte resuelto correctamente' });
+    const report = result.rows[0];
+    const durationMs = new Date(report.resolved_at).getTime() - new Date(report.created_at).getTime();
+    const durationMinutes = Math.round(durationMs / 60000);
+
+    // Notificar en tiempo real a todos en la ruta que el reporte fue resuelto
+    if (report.route_id) {
+      getIo().to(`route:${report.route_id}`).emit('route:report_resolved', {
+        reportId: report.id,
+        type: report.type,
+        duration_minutes: durationMinutes,
+      });
+    }
+
+    res.json({ message: 'Reporte resuelto correctamente', duration_minutes: durationMinutes });
 
   } catch (error) {
     console.error('Error resolviendo reporte:', error);
@@ -358,8 +445,8 @@ export const confirmReport = async (req: Request, res: Response): Promise<void> 
          WHERE user_id = $1 AND description = 'Confirmación de reporte' AND created_at >= $2`,
         [userId, tripRes.rows[0].started_at]
       );
-      if (parseInt(confirmCreditsRes.rows[0].cnt, 10) >= 3) {
-        res.status(429).json({ message: 'Ya alcanzaste el límite de 3 créditos de confirmación en este viaje' });
+      if (parseInt(confirmCreditsRes.rows[0].cnt, 10) >= 2) {
+        res.status(429).json({ message: 'Ya alcanzaste el límite de confirmaciones en este viaje' });
         return;
       }
     }

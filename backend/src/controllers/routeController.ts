@@ -65,6 +65,70 @@ export const getRouteById = async (req: Request, res: Response): Promise<void> =
   }
 };
 
+// Página pública de share con metadatos Open Graph para WhatsApp
+export const getRouteShareInfo = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const esc = (value: string): string => value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  try {
+    const routeRes = await pool.query(
+      `SELECT r.id, r.name, r.code, COALESCE(c.name, r.company, 'MiBus') AS company_name
+       FROM routes r
+       LEFT JOIN companies c ON c.id = r.company_id
+       WHERE r.id = $1`,
+      [id]
+    );
+
+    if (routeRes.rows.length === 0) {
+      res.status(404).send('<html><body>Ruta no encontrada</body></html>');
+      return;
+    }
+
+    const route = routeRes.rows[0] as {
+      id: number;
+      name: string;
+      code: string;
+      company_name: string;
+    };
+
+    const appBaseUrl = process.env.PUBLIC_APP_URL || process.env.APP_URL || 'https://mibus.co';
+    const appBusUrl = `${appBaseUrl.replace(/\/$/, '')}/bus/${route.id}`;
+    const ogTitle = esc(`🚌 ${route.code} · ${route.name}`);
+    const ogDescription = esc(`Voy en el bus ${route.code} (${route.name}). Súbete en MiBus.`);
+    const ogImage = `${appBaseUrl.replace(/\/$/, '')}/og-bus.png`;
+    const safeBusUrl = esc(appBusUrl);
+    const safeOgImage = esc(ogImage);
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(`<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${ogTitle}</title>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="${ogTitle}" />
+    <meta property="og:description" content="${ogDescription}" />
+    <meta property="og:url" content="${safeBusUrl}" />
+    <meta property="og:image" content="${safeOgImage}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta http-equiv="refresh" content="0;url=${safeBusUrl}" />
+  </head>
+  <body>
+    <p>Redirigiendo a ${safeBusUrl}</p>
+  </body>
+</html>`);
+  } catch (error) {
+    console.error('Error obteniendo share de ruta:', error);
+    res.status(500).send('<html><body>Error interno del servidor</body></html>');
+  }
+};
+
 // Crear ruta nueva (requiere autenticación)
 export const createRoute = async (req: Request, res: Response): Promise<void> => {
   const { name, code, company, company_id, first_departure, last_departure, frequency_minutes, geometry } = req.body;
@@ -95,8 +159,11 @@ export const createRoute = async (req: Request, res: Response): Promise<void> =>
     const route = result.rows[0];
 
     if (Array.isArray(geometry)) {
-      // Geometry provided directly — persist and return
-      await pool.query('UPDATE routes SET geometry = $1 WHERE id = $2', [JSON.stringify(geometry), route.id]);
+      // Geometry provided directly by admin — persist and mark as manually edited
+      await pool.query(
+        'UPDATE routes SET geometry = $1, manually_edited_at = NOW() WHERE id = $2',
+        [JSON.stringify(geometry), route.id]
+      );
       route.geometry = geometry;
     } else {
       // Try OSRM (non-blocking: failure keeps geometry null)
@@ -199,7 +266,8 @@ export const updateRoute = async (req: Request, res: Response): Promise<void> =>
            company_id = COALESCE($4, company_id),
            first_departure = COALESCE($5, first_departure),
            last_departure = COALESCE($6, last_departure),
-           frequency_minutes = COALESCE($7, frequency_minutes)
+           frequency_minutes = COALESCE($7, frequency_minutes),
+           manually_edited_at = NOW()
        WHERE id = $8
        RETURNING *`,
       [name, code, company, company_id ?? null, first_departure, last_departure, frequency_minutes, id]
@@ -374,8 +442,8 @@ export const getPlanRoutes = async (req: Request, res: Response): Promise<void> 
   const hasOrigin = oLat !== null && oLng !== null && !isNaN(oLat!) && !isNaN(oLng!);
 
   // Thresholds: how close the route geometry must pass to each point
-  const ORIGIN_THRESHOLD_KM = 0.6;   // 600 m — route must pass within 600 m of origin
-  const DEST_THRESHOLD_KM   = 0.8;   // 800 m — route must pass within 800 m of destination
+  const ORIGIN_THRESHOLD_KM = 0.25;  // 250 m — route must pass within 250 m of origin
+  const DEST_THRESHOLD_KM   = 1.0;   // 1 km — route must pass within 1 km of destination
 
   try {
     // Fetch all active routes with geometry and their stops + last report
@@ -519,6 +587,106 @@ export const getPlanRoutes = async (req: Request, res: Response): Promise<void> 
   }
 };
 
+// GET /api/routes/:id/activity — actividad de la última hora para una ruta
+export const getRouteActivity = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+
+  try {
+    const [activeTripsRes, recentTripsRes, reportsRes] = await Promise.all([
+      // Viajes activos ahora mismo en esta ruta
+      pool.query(
+        `SELECT current_latitude, current_longitude,
+                ROUND(EXTRACT(EPOCH FROM (NOW() - last_location_at)) / 60)::int AS minutes_ago
+         FROM active_trips
+         WHERE route_id = $1
+           AND is_active = true
+           AND last_location_at > NOW() - INTERVAL '1 hour'
+         ORDER BY last_location_at DESC`,
+        [id]
+      ),
+      // Viajes iniciados en la última hora (subidas y bajadas)
+      // Solo cuenta viajes finalizados que recorrieron ≥2 km (anti-ciclo)
+      pool.query(
+        `SELECT current_latitude AS lat, current_longitude AS lng,
+                ROUND(EXTRACT(EPOCH FROM (NOW() - started_at)) / 60)::int AS minutes_ago,
+                is_active,
+                ended_at IS NOT NULL AND is_active = false AS alighted
+         FROM active_trips
+         WHERE route_id = $1
+           AND started_at > NOW() - INTERVAL '1 hour'
+           AND (is_active = true OR total_distance_meters >= 2000)
+         ORDER BY started_at DESC
+         LIMIT 15`,
+        [id]
+      ),
+      // Reportes activos de la última hora
+      pool.query(
+        `SELECT type, latitude, longitude, description, confirmations,
+                ROUND(EXTRACT(EPOCH FROM (NOW() - created_at)) / 60)::int AS minutes_ago
+         FROM reports
+         WHERE route_id = $1
+           AND is_active = true
+           AND created_at > NOW() - INTERVAL '1 hour'
+         ORDER BY created_at DESC`,
+        [id]
+      ),
+    ]);
+
+    const activePositions = activeTripsRes.rows.map(t => ({
+      lat: parseFloat(t.current_latitude),
+      lng: parseFloat(t.current_longitude),
+      minutes_ago: t.minutes_ago,
+    }));
+
+    // Construir timeline de eventos
+    const events: any[] = [];
+
+    // Subidas y bajadas (excluir los que ya están en activePositions)
+    const activeIds = new Set(activeTripsRes.rows.map(t => `${t.current_latitude},${t.current_longitude}`));
+    for (const t of recentTripsRes.rows) {
+      const key = `${t.lat},${t.lng}`;
+      if (t.is_active && activeIds.has(key)) continue; // ya incluido como activo
+      events.push({
+        type: t.alighted ? 'alighting' : 'boarding',
+        minutes_ago: t.minutes_ago,
+        lat: parseFloat(t.lat),
+        lng: parseFloat(t.lng),
+      });
+    }
+
+    // Reportes
+    for (const r of reportsRes.rows) {
+      events.push({
+        type: 'report',
+        report_type: r.type,
+        minutes_ago: r.minutes_ago,
+        lat: parseFloat(r.latitude),
+        lng: parseFloat(r.longitude),
+        confirmations: r.confirmations,
+        description: r.description ?? null,
+      });
+    }
+
+    events.sort((a, b) => a.minutes_ago - b.minutes_ago);
+
+    const allMinutes = [
+      ...activeTripsRes.rows.map(t => t.minutes_ago),
+      ...events.map(e => e.minutes_ago),
+    ];
+    const lastActivityMinutes = allMinutes.length > 0 ? Math.min(...allMinutes) : null;
+
+    res.json({
+      active_count: activeTripsRes.rowCount ?? 0,
+      last_activity_minutes: lastActivityMinutes,
+      events,
+      active_positions: activePositions,
+    });
+  } catch (error) {
+    console.error('Error en getRouteActivity:', error);
+    res.status(500).json({ message: 'Error interno del servidor' });
+  }
+};
+
 // Regenerar geometría de una ruta llamando OSRM (requiere admin)
 export const regenerateGeometry = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
@@ -536,13 +704,42 @@ export const regenerateGeometry = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    await pool.query('UPDATE routes SET geometry = $1 WHERE id = $2', [JSON.stringify(osrm.points), id]);
+    // OSRM regeneró la geometría — ya no es edición manual
+    await pool.query(
+      'UPDATE routes SET geometry = $1, manually_edited_at = NULL WHERE id = $2',
+      [JSON.stringify(osrm.points), id]
+    );
     await computeLegsForRoute(parseInt(id as string, 10));
 
     res.json({ success: true, pointsCount: osrm.points.length, hadFallbacks: osrm.hadFallbacks });
 
   } catch (error) {
     console.error('Error regenerando geometría:', error);
+    res.status(500).json({ message: 'Error interno del servidor' });
+  }
+};
+
+// Snap waypoints a calles usando OSRM (requiere admin)
+export const snapWaypoints = async (req: Request, res: Response): Promise<void> => {
+  const { waypoints } = req.body as { waypoints: [number, number][] };
+
+  if (!Array.isArray(waypoints) || waypoints.length < 2) {
+    res.status(400).json({ message: 'Se necesitan al menos 2 waypoints' });
+    return;
+  }
+
+  try {
+    const stops = waypoints.map(([lat, lng]) => ({ latitude: lat, longitude: lng }));
+    const result = await fetchOSRMGeometry(stops);
+
+    if (!result) {
+      res.status(422).json({ message: 'OSRM no pudo calcular la ruta para esos waypoints' });
+      return;
+    }
+
+    res.json({ geometry: result.points, hadFallbacks: result.hadFallbacks });
+  } catch (error) {
+    console.error('Error en snap-waypoints:', error);
     res.status(500).json({ message: 'Error interno del servidor' });
   }
 };

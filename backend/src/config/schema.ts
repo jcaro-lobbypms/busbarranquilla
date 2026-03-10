@@ -125,6 +125,11 @@ const createTables = async () => {
       ALTER TABLE users
         ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE
     `);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_report_date DATE DEFAULT NULL`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS report_streak INTEGER DEFAULT 0`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR(10) UNIQUE DEFAULT NULL`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by INTEGER REFERENCES users(id) ON DELETE SET NULL`);
+    await pool.query(`ALTER TABLE users ALTER COLUMN password DROP NOT NULL`);
     await pool.query(`
       ALTER TABLE routes
         ADD COLUMN IF NOT EXISTS company_id INTEGER REFERENCES companies(id) ON DELETE SET NULL
@@ -238,6 +243,51 @@ const createTables = async () => {
       )
     `);
     console.log('✅ Tabla payments creada');
+
+    // Tabla de reportes de ruta desactualizada (usuarios detectan que el bus tomó otro camino)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS route_update_reports (
+        id SERIAL PRIMARY KEY,
+        route_id INTEGER NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+        user_id  INTEGER NOT NULL REFERENCES users(id)  ON DELETE CASCADE,
+        tipo     VARCHAR(20) NOT NULL CHECK (tipo IN ('trancon', 'ruta_real')),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(route_id, user_id)
+      )
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_route_update_reports_route_id
+        ON route_update_reports(route_id)
+    `);
+    console.log('✅ Tabla route_update_reports creada');
+
+    // Columna para marcar cuándo el admin revisó la alerta de ruta desactualizada
+    await pool.query(`
+      ALTER TABLE routes
+        ADD COLUMN IF NOT EXISTS route_alert_reviewed_at TIMESTAMPTZ DEFAULT NULL
+    `);
+    console.log('✅ Columna route_alert_reviewed_at en routes');
+
+    // Marca de edición manual por el admin (protege la ruta de ser sobreescrita en imports)
+    await pool.query(`
+      ALTER TABLE routes
+        ADD COLUMN IF NOT EXISTS manually_edited_at TIMESTAMPTZ DEFAULT NULL
+    `);
+    console.log('✅ Columna manually_edited_at en routes');
+
+    // Track GPS reportado por el usuario al votar ruta_real
+    await pool.query(`
+      ALTER TABLE route_update_reports
+        ADD COLUMN IF NOT EXISTS reported_geometry JSONB DEFAULT NULL
+    `);
+    console.log('✅ Columna reported_geometry en route_update_reports');
+
+    // Distancia total acumulada por viaje (para validar que recorrió ≥2 km)
+    await pool.query(`
+      ALTER TABLE active_trips
+        ADD COLUMN IF NOT EXISTS total_distance_meters DECIMAL(10,2) DEFAULT 0
+    `);
+    console.log('✅ Columna total_distance_meters en active_trips');
 
     // Cerrar viajes zombie (activos por más de 4 horas sin actualización de ubicación)
     const zombieClosed = await pool.query(`

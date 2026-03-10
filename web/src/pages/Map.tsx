@@ -6,6 +6,7 @@ import BottomSheet, { type SheetState } from '../components/BottomSheet';
 import type { RouteRecommendation } from '../components/RoutePlanner';
 import CatchBusMode from '../components/CatchBusMode';
 import PlanTripMode from '../components/PlanTripMode';
+import Onboarding from '../components/Onboarding';
 import { routesApi, stopsApi, tripsApi, reportsApi } from '../services/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -96,12 +97,22 @@ export default function Map() {
   const [planDest, setPlanDest] = useState<{ lat: number; lng: number } | null>(null);
   const [planRouteStops, setPlanRouteStops] = useState<{ latitude: number; longitude: number }[]>([]);
   const [planDropoffStop, setPlanDropoffStop] = useState<{ latitude: number; longitude: number; name: string } | null>(null);
+  const [routeActivityPositions, setRouteActivityPositions] = useState<{ lat: number; lng: number; minutes_ago: number }[]>([]);
 
   // Map pick mode for planner
   const [mapPickMode, setMapPickMode] = useState<'none' | 'origin' | 'dest'>('none');
   const [mapPickedOrigin, setMapPickedOrigin] = useState<{ lat: number; lng: number } | null>(null);
   const [mapPickedDest, setMapPickedDest] = useState<{ lat: number; lng: number } | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 10.9685, lng: -74.7813 });
+  const [onboardingDone, setOnboardingDone] = useState(true);
+
+  useEffect(() => {
+    if (!user) {
+      setOnboardingDone(true);
+      return;
+    }
+    setOnboardingDone(localStorage.getItem('onboarding_done') !== null);
+  }, [user]);
 
   // ── Credits popup: close on outside click ─────────────────────────────────
   useEffect(() => {
@@ -468,6 +479,7 @@ export default function Map() {
                 setSheetMode('trip');
                 setSheetState('middle');
               }}
+              onActivityPositions={setRouteActivityPositions}
             />
           </div>
         );
@@ -497,6 +509,7 @@ export default function Map() {
         planDropoffStop={planDropoffStop}
         catchBusBoardingStop={catchBusBoardingStop}
         catchBusUserPosition={userPosition}
+        routeActivityPositions={routeActivityPositions}
       />
 
       {/* ── Top bar ───────────────────────────────────────────────────────── */}
@@ -650,6 +663,14 @@ export default function Map() {
           </a>
         </div>
       )}
+
+      <Onboarding
+        open={Boolean(user) && !onboardingDone}
+        onFinish={() => {
+          localStorage.setItem('onboarding_done', '1');
+          setOnboardingDone(true);
+        }}
+      />
     </div>
   );
 }
