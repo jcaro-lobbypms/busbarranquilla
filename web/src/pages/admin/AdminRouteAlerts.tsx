@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { routeAlertsApi, routesApi } from '../../services/api';
@@ -9,6 +10,11 @@ interface Reporter {
   user_name: string;
   tipo: 'ruta_real' | 'trancon';
   created_at: string;
+}
+
+interface ReportedGeometry {
+  user_name: string;
+  geometry: [number, number][];
 }
 
 interface RouteAlert {
@@ -22,16 +28,21 @@ interface RouteAlert {
   route_alert_reviewed_at: string | null;
   reporters: Reporter[];
   reporter_positions: [number, number][];
+  reported_geometries: ReportedGeometry[];
 }
 
 // ─── Mini-map component ───────────────────────────────────────────────────────
 
+const ORANGE_SHADES = ['#F97316', '#FB923C', '#FDBA74', '#EA580C', '#C2410C'];
+
 function RouteMapPreview({
   geometry,
   reporterPositions,
+  reportedGeometries,
 }: {
   geometry: [number, number][] | null;
   reporterPositions: [number, number][];
+  reportedGeometries: ReportedGeometry[];
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -50,7 +61,6 @@ function RouteMapPreview({
     if (geometry && geometry.length >= 2) {
       const latlngs = geometry.map(([lat, lng]) => [lat, lng] as L.LatLngTuple);
       L.polyline(latlngs, { color: '#3B82F6', weight: 4, opacity: 0.85 }).addTo(map);
-      // Marcadores inicio / fin
       const startIcon = L.divIcon({
         className: '',
         html: `<div style="background:#22C55E;width:12px;height:12px;border-radius:50%;border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>`,
@@ -66,7 +76,18 @@ function RouteMapPreview({
       bounds.push(...latlngs);
     }
 
-    // Posiciones GPS de reportantes (rojo, pulsante)
+    // Tracks GPS reportados por usuarios (naranja, uno por usuario)
+    reportedGeometries.forEach((rg, idx) => {
+      if (!rg.geometry || rg.geometry.length < 2) return;
+      const latlngs = rg.geometry.map(([lat, lng]) => [lat, lng] as L.LatLngTuple);
+      const color = ORANGE_SHADES[idx % ORANGE_SHADES.length];
+      L.polyline(latlngs, { color, weight: 3, opacity: 0.9, dashArray: '6,4' })
+        .bindTooltip(rg.user_name, { permanent: false, direction: 'top' })
+        .addTo(map);
+      bounds.push(...latlngs);
+    });
+
+    // Posiciones GPS sueltas de reportantes (rojo, pulsante)
     reporterPositions.forEach(([lat, lng]) => {
       const icon = L.divIcon({
         className: '',
@@ -94,17 +115,23 @@ function RouteMapPreview({
 
   return (
     <div className="relative">
-      <div ref={containerRef} style={{ height: 260 }} className="rounded-lg overflow-hidden z-0" />
+      <div ref={containerRef} style={{ height: 280 }} className="rounded-lg overflow-hidden z-0" />
       {/* Leyenda */}
       <div className="absolute bottom-2 left-2 bg-white/90 rounded-md px-2 py-1.5 text-xs flex flex-col gap-1 shadow-sm z-[1000]">
         <span className="flex items-center gap-1.5">
           <span className="inline-block w-4 h-1 bg-blue-500 rounded" />
           Trazado actual en DB
         </span>
+        {reportedGeometries.length > 0 && (
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-4 h-0.5 bg-orange-500 rounded border-dashed" style={{ borderTop: '2px dashed #F97316', background: 'none' }} />
+            Track GPS reportado
+          </span>
+        )}
         {reporterPositions.length > 0 && (
           <span className="flex items-center gap-1.5">
             <span className="inline-block w-2.5 h-2.5 bg-red-500 rounded-full" />
-            GPS de reportantes
+            Última posición GPS
           </span>
         )}
       </div>
@@ -115,6 +142,7 @@ function RouteMapPreview({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function AdminRouteAlerts() {
+  const navigate = useNavigate();
   const [alerts, setAlerts] = useState<RouteAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
@@ -156,6 +184,16 @@ export default function AdminRouteAlerts() {
     } finally {
       setRegenerating(null);
     }
+  };
+
+  const handleEditWithTracks = (alert: RouteAlert) => {
+    if (alert.reported_geometries?.length > 0) {
+      sessionStorage.setItem('admin_route_ref_tracks', JSON.stringify({
+        routeId: alert.id,
+        tracks: alert.reported_geometries,
+      }));
+    }
+    navigate(`/admin/routes?editRoute=${alert.id}`);
   };
 
   const formatDate = (iso: string) => {
@@ -255,10 +293,11 @@ export default function AdminRouteAlerts() {
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
                       Comparación visual
                     </p>
-                    {alert.geometry ? (
+                    {alert.geometry || alert.reported_geometries?.length > 0 ? (
                       <RouteMapPreview
                         geometry={alert.geometry}
                         reporterPositions={alert.reporter_positions}
+                        reportedGeometries={alert.reported_geometries ?? []}
                       />
                     ) : (
                       <div className="bg-gray-100 rounded-lg h-40 flex items-center justify-center text-sm text-gray-400">
@@ -285,28 +324,39 @@ export default function AdminRouteAlerts() {
                               <th className="px-3 py-2 text-left font-medium">Usuario</th>
                               <th className="px-3 py-2 text-left font-medium">Tipo</th>
                               <th className="px-3 py-2 text-left font-medium">Cuándo</th>
+                              <th className="px-3 py-2 text-left font-medium">Track GPS</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-50">
-                            {alert.reporters.map((r, i) => (
-                              <tr key={i} className="hover:bg-gray-50">
-                                <td className="px-3 py-2 font-medium text-gray-900">{r.user_name}</td>
-                                <td className="px-3 py-2">
-                                  {r.tipo === 'ruta_real' ? (
-                                    <span className="inline-flex items-center gap-1 bg-red-100 text-red-700 text-xs font-medium px-2 py-0.5 rounded-full">
-                                      🗺️ Ruta diferente
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-600 text-xs font-medium px-2 py-0.5 rounded-full">
-                                      🚧 Trancón
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="px-3 py-2 text-gray-500 text-xs">
-                                  {formatRelative(r.created_at)}
-                                </td>
-                              </tr>
-                            ))}
+                            {alert.reporters.map((r, i) => {
+                              const hasTrack = alert.reported_geometries?.some(g => g.user_name === r.user_name);
+                              return (
+                                <tr key={i} className="hover:bg-gray-50">
+                                  <td className="px-3 py-2 font-medium text-gray-900">{r.user_name}</td>
+                                  <td className="px-3 py-2">
+                                    {r.tipo === 'ruta_real' ? (
+                                      <span className="inline-flex items-center gap-1 bg-red-100 text-red-700 text-xs font-medium px-2 py-0.5 rounded-full">
+                                        🗺️ Ruta diferente
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-600 text-xs font-medium px-2 py-0.5 rounded-full">
+                                        🚧 Trancón
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2 text-gray-500 text-xs">
+                                    {formatRelative(r.created_at)}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    {hasTrack ? (
+                                      <span className="text-xs text-orange-600 font-medium">🟠 Guardado</span>
+                                    ) : (
+                                      <span className="text-xs text-gray-400">Sin track</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -330,12 +380,12 @@ export default function AdminRouteAlerts() {
                   ) : '🔄'}
                   Regenerar desde paradas
                 </button>
-                <a
-                  href="/admin/routes"
+                <button
+                  onClick={() => handleEditWithTracks(alert)}
                   className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
                 >
-                  ✏️ Editar trazado manualmente
-                </a>
+                  ✏️ {alert.reported_geometries?.length > 0 ? 'Editar con tracks como guía' : 'Editar trazado manualmente'}
+                </button>
                 <button
                   onClick={() => handleDismiss(alert.id)}
                   disabled={dismissing === alert.id || regenerating === alert.id}

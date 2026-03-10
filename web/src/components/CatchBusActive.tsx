@@ -182,7 +182,10 @@ export default function CatchBusActive({
       {deviationAlert && (
         <div className="bg-orange-50 border border-orange-200 rounded-2xl p-3.5 space-y-2.5">
           <p className="text-sm font-semibold text-orange-800">
-            🔀 El bus parece estar fuera de su ruta habitual
+            🔀 Llevas +1 min fuera de la ruta del mapa
+          </p>
+          <p className="text-xs text-orange-600">
+            ¿El bus tomó un camino diferente o la ruta cambió?
           </p>
           <div className="flex flex-col gap-1.5">
             <button

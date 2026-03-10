@@ -275,6 +275,13 @@ const createTables = async () => {
     `);
     console.log('✅ Columna manually_edited_at en routes');
 
+    // Track GPS reportado por el usuario al votar ruta_real
+    await pool.query(`
+      ALTER TABLE route_update_reports
+        ADD COLUMN IF NOT EXISTS reported_geometry JSONB DEFAULT NULL
+    `);
+    console.log('✅ Columna reported_geometry en route_update_reports');
+
     // Cerrar viajes zombie (activos por más de 4 horas sin actualización de ubicación)
     const zombieClosed = await pool.query(`
       UPDATE active_trips

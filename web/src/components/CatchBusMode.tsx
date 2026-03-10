@@ -96,6 +96,16 @@ function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number)
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// Distancia en metros de un punto (px,py) al segmento (ax,ay)→(bx,by)
+function distToSegmentMeters(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return haversineMeters(px, py, ax, ay);
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+  return haversineMeters(px, py, ax + t * dx, ay + t * dy);
+}
+
 function fmtTime(secs: number): string {
   const m = Math.floor(secs / 60).toString().padStart(2, '0');
   const s = (secs % 60).toString().padStart(2, '0');
@@ -127,6 +137,7 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
   // Modals
   const [showBoardConfirm, setShowBoardConfirm] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
+  const [boardingDistanceWarning, setBoardingDistanceWarning] = useState<number | null>(null);
 
   // Active trip
   const [activeTrip, setActiveTrip] = useState<ActiveTripFull | null>(null);
@@ -174,6 +185,7 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
   const outOfRouteSecondsRef = useRef<number>(0);
   const ignoreDeviationUntilRef = useRef<number>(0);
   const routeStopsRef = useRef<{ lat: number; lng: number }[]>([]);
+  const routeGeometryRef = useRef<[number, number][] | null>(null);
   const monitor3Ref = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastPositionRef = useRef<{ lat: number; lng: number; timestamp: number } | null>(null);
   const inactiveSecondsRef = useRef<number>(0);
@@ -187,6 +199,7 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
   const locationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const clockIntervalRef    = useRef<ReturnType<typeof setInterval> | null>(null);
   const gpsCheckRef         = useRef<ReturnType<typeof setInterval> | null>(null);
+  const gpsTrackRef         = useRef<[number, number][]>([]); // track GPS del viaje actual
 
   // ── beforeunload: cerrar viaje si usuario cierra la pestaña ───────────
   useEffect(() => {
@@ -298,13 +311,21 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
     };
   }, [activeTrip]);
 
-  // ── Monitor 2: detección de desvío si >250m de ruta por >90s ──────────
+  // ── Monitor 2: detección de desvío si >100m de geometría por >60s ─────
+  // Usa geometría (polyline) como referencia primaria; cae a paradas si no hay geometría.
+  // Chequea cada 15s. Dispara alerta tras 60s continuos fuera de ruta.
   useEffect(() => {
     if (!activeTrip?.route_id) return;
 
-    // Cargar paradas de la ruta al inicio
+    routeGeometryRef.current = null;
+    routeStopsRef.current = [];
+
     routesApi.getById(activeTrip.route_id)
       .then((r) => {
+        const geom = r.data.route?.geometry as [number, number][] | null | undefined;
+        if (geom && geom.length >= 2) {
+          routeGeometryRef.current = geom;
+        }
         const stops = (r.data.stops ?? []) as { latitude: number; longitude: number }[];
         routeStopsRef.current = stops.map((s) => ({
           lat: parseFloat(String(s.latitude)),
@@ -317,26 +338,39 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
 
     monitor2Ref.current = setInterval(() => {
       const pos = userPositionRef.current;
+      if (!pos || Date.now() <= ignoreDeviationUntilRef.current) return;
+
+      const geom = routeGeometryRef.current;
       const stops = routeStopsRef.current;
-      if (!pos || stops.length === 0) return;
 
-      const minDist = stops.reduce((best, s) => {
-        const d = haversineMeters(pos[0], pos[1], s.lat, s.lng);
-        return d < best ? d : best;
-      }, Infinity);
+      // Sin datos de ruta aún — esperar
+      if (!geom && stops.length === 0) return;
 
-      if (minDist > 250) {
-        outOfRouteSecondsRef.current += 30;
-        if (
-          outOfRouteSecondsRef.current >= 90 &&
-          Date.now() > ignoreDeviationUntilRef.current
-        ) {
+      let minDist = Infinity;
+
+      if (geom && geom.length >= 2) {
+        // Distancia mínima al segmento más cercano de la polyline
+        for (let i = 0; i < geom.length - 1; i++) {
+          const d = distToSegmentMeters(pos[0], pos[1], geom[i][0], geom[i][1], geom[i + 1][0], geom[i + 1][1]);
+          if (d < minDist) minDist = d;
+        }
+      } else {
+        // Fallback: distancia a parada más cercana
+        minDist = stops.reduce((best, s) => {
+          const d = haversineMeters(pos[0], pos[1], s.lat, s.lng);
+          return d < best ? d : best;
+        }, Infinity);
+      }
+
+      if (minDist > 100) {
+        outOfRouteSecondsRef.current += 15;
+        if (outOfRouteSecondsRef.current >= 60) {
           setDeviationAlert(true);
         }
       } else {
         outOfRouteSecondsRef.current = 0;
       }
-    }, 30000);
+    }, 15000);
 
     return () => {
       if (monitor2Ref.current) {
@@ -509,9 +543,15 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
     clearAllIntervals();
 
     // Location update every 30s (backend awards +1 credit/min)
+    // Capturar posición inicial inmediatamente al arrancar el viaje
+    gpsTrackRef.current = userPositionRef.current ? [userPositionRef.current] : [];
     locationIntervalRef.current = setInterval(() => {
       const pos = userPositionRef.current;
       if (!pos) return;
+      // Acumular track GPS (máx 300 puntos ≈ 2.5h de viaje)
+      if (gpsTrackRef.current.length < 300) {
+        gpsTrackRef.current.push(pos);
+      }
       tripsApi.updateLocation({ latitude: pos[0], longitude: pos[1] })
         .then((r) => { if (r.data.credits_pending !== undefined) setCreditsThisTrip(r.data.credits_pending); })
         .catch(() => {});
@@ -683,10 +723,28 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
   }, [routes, loading, view]);
 
   // ── Trip start ────────────────────────────────────────────────────────
-  const handleStart = async () => {
+  const handleStart = async (forceStart = false) => {
     if (!selectedRoute) return;
     const pos = userPositionRef.current;
     if (!pos) { showToast('Esperando ubicación GPS...'); return; }
+
+    // Layer 2: advertencia si el usuario está lejos de la geometría de la ruta
+    if (!forceStart) {
+      const geom = selectedRoute.geometry;
+      if (geom && geom.length >= 2) {
+        let minDist = Infinity;
+        for (let i = 0; i < geom.length - 1; i++) {
+          const d = distToSegmentMeters(pos[0], pos[1], geom[i][0], geom[i][1], geom[i + 1][0], geom[i + 1][1]);
+          if (d < minDist) minDist = d;
+        }
+        if (minDist > 800) {
+          setBoardingDistanceWarning(Math.round(minDist));
+          return; // esperar confirmación del usuario
+        }
+      }
+    }
+
+    setBoardingDistanceWarning(null);
     setTripLoading(true);
     try {
       const res = await tripsApi.start({
@@ -1018,9 +1076,10 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
         tripLoading={tripLoading}
         onReportDeviation={async () => {
           const pos = userPositionRef.current;
-          if (pos) {
+          const routeId = activeTrip.route_id;
+          if (pos && routeId) {
             await reportsApi.create({
-              route_id: activeTrip.route_id ?? undefined,
+              route_id: routeId,
               type: 'desvio',
               latitude: pos[0],
               longitude: pos[1],
@@ -1032,12 +1091,20 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
                 showToast(REPORT_RATE_LIMIT_TOAST);
               }
             });
+            // Voto ruta_real + track GPS → admin puede ver la ruta que hizo el bus
+            const track = gpsTrackRef.current.length >= 2 ? gpsTrackRef.current : undefined;
+            routesApi.reportUpdate(routeId, 'ruta_real', track).catch(() => {});
           }
+          // El usuario confirmó que la ruta cambió — no tiene sentido seguir
+          // comparando contra la geometría del mapa por el resto del viaje
+          ignoreDeviationUntilRef.current = Date.now() + 7200000; // 2 horas
+          outOfRouteSecondsRef.current = 0;
           setDeviationAlert(false);
         }}
         onDeviationExit={() => { setDeviationAlert(false); setShowEndConfirm(true); }}
         onIgnoreDeviation={() => {
           ignoreDeviationUntilRef.current = Date.now() + 300000;
+          outOfRouteSecondsRef.current = 0;
           setDeviationAlert(false);
         }}
         onActivateDropoff={async () => {
@@ -1111,10 +1178,42 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
         onWaitReportNoStop={() => handleWaitReport('sin_parar', 4)}
         onWaitReportCrowded={() => handleWaitReport('espera', 3)}
         onRequestBoardConfirm={() => setShowBoardConfirm(true)}
-        onCancelWaiting={() => { setSelectedRoute(null); setView('list'); onRouteGeometry?.(null); onBoardingStop?.(null); setBoardingStop(null); }}
-        onConfirmDifferentBus={() => { setShowBoardConfirm(false); setSelectedRoute(null); setView('list'); onRouteGeometry?.(null); onBoardingStop?.(null); setBoardingStop(null); }}
+        onCancelWaiting={() => { setBoardingDistanceWarning(null); setShowBoardConfirm(false); setSelectedRoute(null); setView('list'); onRouteGeometry?.(null); onBoardingStop?.(null); setBoardingStop(null); }}
+        onConfirmDifferentBus={() => { setBoardingDistanceWarning(null); setShowBoardConfirm(false); setSelectedRoute(null); setView('list'); onRouteGeometry?.(null); onBoardingStop?.(null); setBoardingStop(null); }}
         onStartTrip={handleStart}
-      />
+      >
+        {/* Modal: usuario está lejos de la ruta */}
+        {boardingDistanceWarning !== null && (
+          <div className="fixed inset-0 z-[2000] bg-black/50 flex items-end justify-center px-4 pb-6">
+            <div className="bg-white rounded-2xl p-5 w-full max-w-sm space-y-3 shadow-2xl">
+              <p className="font-semibold text-gray-900 text-center">
+                ⚠️ Estás lejos de esta ruta
+              </p>
+              <p className="text-sm text-gray-500 text-center">
+                Tu ubicación está a <span className="font-bold text-orange-600">{boardingDistanceWarning} m</span> del recorrido registrado de <span className="font-semibold">{selectedRoute.code}</span>.
+              </p>
+              <p className="text-xs text-gray-400 text-center">
+                Puede que la ruta esté desactualizada. ¿Confirmás que estás en este bus?
+              </p>
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => setBoardingDistanceWarning(null)}
+                  className="flex-1 border border-gray-200 text-gray-600 font-medium py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => handleStart(true)}
+                  disabled={tripLoading}
+                  className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl text-sm transition-colors"
+                >
+                  {tripLoading ? 'Iniciando...' : 'Sí, estoy en él'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </CatchBusWaiting>
     );
   }
 

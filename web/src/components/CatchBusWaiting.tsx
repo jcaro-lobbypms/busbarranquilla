@@ -1,3 +1,5 @@
+import React from 'react';
+
 interface Route {
   id: number;
   name: string;
@@ -37,7 +39,8 @@ interface Props {
   onRequestBoardConfirm: () => void;
   onCancelWaiting: () => void;
   onConfirmDifferentBus: () => void;
-  onStartTrip: () => void;
+  onStartTrip: (forceStart?: boolean) => void;
+  children?: React.ReactNode;
 }
 
 export default function CatchBusWaiting({
@@ -54,6 +57,7 @@ export default function CatchBusWaiting({
   onCancelWaiting,
   onConfirmDifferentBus,
   onStartTrip,
+  children,
 }: Props) {
   return (
     <div className="space-y-3">
@@ -165,7 +169,7 @@ export default function CatchBusWaiting({
                 No, cogí otro
               </button>
               <button
-                onClick={onStartTrip}
+                onClick={() => onStartTrip()}
                 disabled={tripLoading}
                 className="flex-1 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl text-sm transition-colors"
               >
@@ -175,6 +179,7 @@ export default function CatchBusWaiting({
           </div>
         </div>
       )}
+      {children}
     </div>
   );
 }

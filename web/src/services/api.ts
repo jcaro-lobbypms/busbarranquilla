@@ -97,6 +97,12 @@ export const routesApi = {
   getActivity: (id: number) =>
     api.get(`/api/routes/${id}/activity`),
 
+  reportUpdate: (id: number, tipo: 'ruta_real' | 'trancon', geometry?: [number, number][]) =>
+    api.post(`/api/routes/${id}/update-report`, { tipo, geometry }),
+
+  applyReportedGeometry: (id: number, geometry: [number, number][]) =>
+    api.patch(`/api/routes/${id}/apply-reported-geometry`, { geometry }),
+
   snapWaypoints: (waypoints: [number, number][]) =>
     api.post('/api/routes/snap-waypoints', { waypoints }),
 

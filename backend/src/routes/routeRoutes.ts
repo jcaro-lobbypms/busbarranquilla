@@ -22,6 +22,7 @@ import {
   getRouteUpdateAlerts,
   getRouteUpdateAlertsCount,
   dismissRouteAlert,
+  applyReportedGeometry,
 } from '../controllers/routeUpdateController';
 import { authMiddleware } from '../middlewares/authMiddleware';
 import { requireRole } from '../middlewares/roleMiddleware';
@@ -55,5 +56,6 @@ router.post('/:id/regenerate-geometry', authMiddleware, requireRole('admin'), re
 router.get('/:id/activity', authMiddleware, getRouteActivity);
 router.post('/:id/update-report', authMiddleware, reportRouteUpdate);
 router.patch('/:id/dismiss-alert', authMiddleware, requireRole('admin'), dismissRouteAlert);
+router.patch('/:id/apply-reported-geometry', authMiddleware, requireRole('admin'), applyReportedGeometry);
 
 export default router;

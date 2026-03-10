@@ -3,6 +3,17 @@ import pool from '../config/database';
 import { awardCredits } from './creditController';
 import { getIo } from '../config/socket';
 
+const MAX_TRIP_LOCATION_CREDITS = 45; // máx créditos por ubicación en un viaje (~45 min)
+
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 // Iniciar viaje (Me subí)
 export const startTrip = async (req: Request, res: Response): Promise<void> => {
   const { route_id, latitude, longitude, destination_stop_id } = req.body;
@@ -88,8 +99,27 @@ export const updateLocation = async (req: Request, res: Response): Promise<void>
       trip.last_location_at === null ||
       new Date().getTime() - new Date(trip.last_location_at).getTime() >= creditThresholdMs;
 
+    // Chequeo de velocidad: si no se movió > 100m desde la última posición, no acumular
+    // (caminar o estar quieto no cuenta; paradas en semáforo breves sí se pierden pero es aceptable)
+    let isMovingFastEnough = true;
+    if (
+      shouldAccumulate &&
+      trip.current_latitude !== null &&
+      trip.current_longitude !== null
+    ) {
+      const dist = haversineMeters(
+        parseFloat(trip.current_latitude),
+        parseFloat(trip.current_longitude),
+        parseFloat(latitude),
+        parseFloat(longitude)
+      );
+      isMovingFastEnough = dist >= 100; // < 100m en ~30s ≈ < 12 km/h = no está en bus
+    }
+
     let creditsEarned = trip.credits_earned;
-    if (shouldAccumulate) creditsEarned += 1;
+    if (shouldAccumulate && isMovingFastEnough && creditsEarned < MAX_TRIP_LOCATION_CREDITS) {
+      creditsEarned += 1;
+    }
 
     const updated = await pool.query(
       `UPDATE active_trips

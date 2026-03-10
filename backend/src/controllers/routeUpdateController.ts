@@ -7,7 +7,7 @@ const RUTA_REAL_THRESHOLD = 3; // reportes para activar alerta
 // Usuario reporta que el bus tomó un camino diferente
 export const reportRouteUpdate = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { tipo } = req.body; // 'trancon' | 'ruta_real'
+  const { tipo, geometry } = req.body; // 'trancon' | 'ruta_real', geometry?: [lat,lng][]
   const userId = (req as any).userId;
 
   if (!['trancon', 'ruta_real'].includes(tipo)) {
@@ -16,13 +16,17 @@ export const reportRouteUpdate = async (req: Request, res: Response): Promise<vo
   }
 
   try {
-    // Upsert: si el usuario ya reportó esta ruta, actualiza el tipo y timestamp
+    const geomValue = geometry && Array.isArray(geometry) && geometry.length >= 2
+      ? JSON.stringify(geometry)
+      : null;
+
+    // Upsert: si el usuario ya reportó esta ruta, actualiza el tipo, timestamp y geometría
     await pool.query(
-      `INSERT INTO route_update_reports (route_id, user_id, tipo)
-       VALUES ($1, $2, $3)
+      `INSERT INTO route_update_reports (route_id, user_id, tipo, reported_geometry)
+       VALUES ($1, $2, $3, $4)
        ON CONFLICT (route_id, user_id)
-       DO UPDATE SET tipo = $3, created_at = NOW()`,
-      [id, userId, tipo]
+       DO UPDATE SET tipo = $3, created_at = NOW(), reported_geometry = COALESCE($4, route_update_reports.reported_geometry)`,
+      [id, userId, tipo, geomValue]
     );
 
     // Verificar si se alcanzó el umbral de ruta_real
@@ -74,9 +78,9 @@ export const getRouteUpdateAlerts = async (_req: Request, res: Response): Promis
     // Para cada alerta, obtener reportantes y sus últimas posiciones GPS
     const alerts = await Promise.all(
       alertsResult.rows.map(async (row) => {
-        // Reportantes con nombre y tipo
+        // Reportantes con nombre, tipo y geometría reportada
         const reportersResult = await pool.query(
-          `SELECT u.name AS user_name, rur.tipo, rur.created_at
+          `SELECT u.name AS user_name, rur.tipo, rur.created_at, rur.reported_geometry
            FROM route_update_reports rur
            JOIN users u ON u.id = rur.user_id
            WHERE rur.route_id = $1
@@ -109,6 +113,15 @@ export const getRouteUpdateAlerts = async (_req: Request, res: Response): Promis
             parseFloat(p.lat),
             parseFloat(p.lng),
           ]),
+          // Geometrías GPS reportadas (solo ruta_real con geometría guardada)
+          reported_geometries: reportersResult.rows
+            .filter((r: { tipo: string; reported_geometry: unknown }) =>
+              r.tipo === 'ruta_real' && r.reported_geometry
+            )
+            .map((r: { user_name: string; reported_geometry: [number, number][] }) => ({
+              user_name: r.user_name,
+              geometry: r.reported_geometry,
+            })),
         };
       })
     );
@@ -143,6 +156,32 @@ export const getRouteUpdateAlertsCount = async (_req: Request, res: Response): P
     res.json({ count: result.rowCount ?? 0 });
   } catch (error) {
     console.error('Error en getRouteUpdateAlertsCount:', error);
+    res.status(500).json({ message: 'Error interno del servidor' });
+  }
+};
+
+// PATCH /api/routes/:id/apply-reported-geometry  (solo admin)
+// Reemplaza la geometría de la ruta con el track GPS reportado por un usuario
+// Marca manually_edited_at = NOW() para que los imports no la pisen
+export const applyReportedGeometry = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const { geometry } = req.body; // [lat, lng][]
+
+  if (!Array.isArray(geometry) || geometry.length < 2) {
+    res.status(400).json({ message: 'geometry debe ser un array de al menos 2 puntos' });
+    return;
+  }
+
+  try {
+    await pool.query(
+      `UPDATE routes
+       SET geometry = $1, manually_edited_at = NOW(), route_alert_reviewed_at = NOW()
+       WHERE id = $2`,
+      [JSON.stringify(geometry), id]
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Error en applyReportedGeometry:', error);
     res.status(500).json({ message: 'Error interno del servidor' });
   }
 };
