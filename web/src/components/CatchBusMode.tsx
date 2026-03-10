@@ -1084,7 +1084,7 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
               latitude: pos[0],
               longitude: pos[1],
             }).then(() => {
-              showToast('⚡ +4 créditos — Desvío reportado');
+              showToast('⚡ +1 crédito — Desvío reportado');
             }).catch((err: unknown) => {
               const e = err as { response?: { status?: number } };
               if (e?.response?.status === 429) {

@@ -432,8 +432,8 @@ export const confirmReport = async (req: Request, res: Response): Promise<void> 
          WHERE user_id = $1 AND description = 'Confirmación de reporte' AND created_at >= $2`,
         [userId, tripRes.rows[0].started_at]
       );
-      if (parseInt(confirmCreditsRes.rows[0].cnt, 10) >= 3) {
-        res.status(429).json({ message: 'Ya alcanzaste el límite de 3 créditos de confirmación en este viaje' });
+      if (parseInt(confirmCreditsRes.rows[0].cnt, 10) >= 2) {
+        res.status(429).json({ message: 'Ya alcanzaste el límite de confirmaciones en este viaje' });
         return;
       }
     }

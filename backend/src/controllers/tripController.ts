@@ -3,7 +3,7 @@ import pool from '../config/database';
 import { awardCredits } from './creditController';
 import { getIo } from '../config/socket';
 
-const MAX_TRIP_LOCATION_CREDITS = 45; // máx créditos por ubicación en un viaje (~45 min)
+const MAX_TRIP_LOCATION_CREDITS = 15; // máx créditos por ubicación en un viaje (~15 min activos)
 
 function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -171,11 +171,12 @@ export const endTrip = async (req: Request, res: Response): Promise<void> => {
     // Descontar minutos sospechosos del acumulado (mínimo 0)
     const finalCredits = Math.max(0, trip.credits_earned - suspiciousMinutes);
 
-    // Auto-award +1 por reportes sin confirmación durante el viaje
+    // Auto-award +1 por reportes sin confirmación durante el viaje (máx 2)
     const uncreditedRes = await pool.query(
       `SELECT id FROM reports
        WHERE user_id = $1 AND credits_awarded_to_reporter = false
-         AND created_at >= $2 AND is_active = true`,
+         AND created_at >= $2 AND is_active = true
+       LIMIT 2`,
       [userId, trip.started_at]
     );
     for (const r of uncreditedRes.rows) {
@@ -191,7 +192,7 @@ export const endTrip = async (req: Request, res: Response): Promise<void> => {
       await awardCredits(userId, finalCredits, 'earn', 'Créditos por transmitir ubicación en bus');
     }
 
-    await awardCredits(userId, 10, 'earn', 'Viaje completado');
+    await awardCredits(userId, 5, 'earn', 'Viaje completado');
 
     const totalEarned = finalCredits + 10 + uncreditedRes.rows.length;
 

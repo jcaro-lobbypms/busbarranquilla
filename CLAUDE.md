@@ -423,13 +423,13 @@ User votes that the bus route has changed or is stuck. ≥3 `ruta_real` votes tr
 | Report (outside active trip) | +3–5 | Immediate, per `CREDITS_BY_TYPE` |
 | Report during trip, alone on bus | +1 | Immediate |
 | Report during trip, others on bus | 0 → +2 | +2 when report reaches 50%+ confirmations; +1 auto on trip end if no confirmation |
-| Confirm another user's report | +1 | Max 3 per trip; confirmer must have active trip on same route |
+| Confirm another user's report | +1 | Max 2 per trip; confirmer must have active trip on same route |
 | Report no service | +4 | |
 | Invite a friend | +25 | |
 | 7-day reporting streak | +30 | |
 | Welcome bonus (registration) | +50 | |
-| Per minute transmitting bus location | +1 | |
-| Complete full trip | +10 | |
+| Per minute transmitting bus location | +1 | Max 15 credits per trip from location (speed check: must move >100m/30s) |
+| Complete full trip | +5 | |
 
 **Occupancy report rules:**
 - Only two states: `lleno` (🔴 Bus lleno) and `bus_disponible` (🟢 Hay sillas)

@@ -72,14 +72,16 @@ const REPORT_TYPE_LABEL: Record<string, { emoji: string; label: string }> = {
   espera: { emoji: '⏱️', label: 'Larga espera' },
 };
 
+// Durante viaje activo el backend otorga +1 (si va solo) o 0→+2 diferido (si hay otros).
+// Se muestra +1 como valor mínimo garantizado.
 const QUICK_REPORTS: { type: ReportType; emoji: string; label: string; credits: number }[] = [
-  { type: 'desvio', emoji: '🔀', label: 'Desvío', credits: 4 },
-  { type: 'trancon', emoji: '🚦', label: 'Trancón', credits: 4 },
+  { type: 'desvio', emoji: '🔀', label: 'Desvío', credits: 1 },
+  { type: 'trancon', emoji: '🚦', label: 'Trancón', credits: 1 },
 ];
 
 const OCCUPANCY_REPORTS: { type: ReportType; emoji: string; label: string; credits: number }[] = [
-  { type: 'lleno', emoji: '🔴', label: 'Bus lleno', credits: 3 },
-  { type: 'bus_disponible', emoji: '🟢', label: 'Hay sillas', credits: 3 },
+  { type: 'lleno', emoji: '🔴', label: 'Bus lleno', credits: 1 },
+  { type: 'bus_disponible', emoji: '🟢', label: 'Hay sillas', credits: 1 },
 ];
 
 const OCCUPANCY_STATE_LABEL: Record<'lleno' | 'disponible', { emoji: string; label: string; color: string }> = {
