@@ -12,7 +12,10 @@ import '../../../shared/widgets/loading_indicator.dart';
 import '../../../shared/widgets/route_polyline_layer.dart';
 import '../providers/map_provider.dart';
 import '../providers/map_state.dart';
+import '../../trip/providers/trip_notifier.dart';
+import '../../trip/providers/trip_state.dart';
 import '../widgets/active_feed_bar.dart';
+import '../widgets/active_route_bus_layer.dart';
 import '../widgets/bus_marker_layer.dart';
 import '../widgets/plan_markers_layer.dart';
 import '../widgets/report_marker_layer.dart';
@@ -56,6 +59,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
     final ready = mapState as MapReady;
     final selectedRoute = ref.watch(selectedFeedRouteProvider);
+    final tripState = ref.watch(tripNotifierProvider);
+    final isOnTrip = tripState is TripActive;
     final center = ready.userPosition ?? const LatLng(10.9685, -74.7813);
 
     return Scaffold(
@@ -81,7 +86,10 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 onConfirm: (reportId) => ref.read(mapNotifierProvider.notifier).confirmReport(reportId),
               ),
               BusMarkerLayer(buses: ready.buses),
-              if (ready.userPosition != null) UserMarkerLayer(position: ready.userPosition!),
+              if (selectedRoute != null)
+                ActiveRouteBusLayer(routeId: selectedRoute.id),
+              if (ready.userPosition != null)
+                UserMarkerLayer(position: ready.userPosition!, isOnTrip: isOnTrip),
             ],
           ),
           Positioned(

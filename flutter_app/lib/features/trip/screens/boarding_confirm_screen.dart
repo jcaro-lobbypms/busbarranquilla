@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/data/repositories/reports_repository.dart';
 import '../../../core/data/repositories/routes_repository.dart';
 import '../../../core/data/repositories/stops_repository.dart';
 import '../../../core/domain/models/bus_route.dart';
+import '../../../core/domain/models/report.dart';
 import '../../../core/domain/models/stop.dart';
 import '../../../core/error/result.dart';
 import '../../../core/l10n/strings.dart';
@@ -17,6 +19,7 @@ import '../../../shared/widgets/route_activity_badge.dart';
 import '../../../shared/widgets/route_code_badge.dart';
 import '../providers/trip_notifier.dart';
 import '../providers/trip_state.dart';
+import '../widgets/route_reports_list.dart';
 
 class BoardingConfirmScreen extends ConsumerStatefulWidget {
   final int routeId;
@@ -41,6 +44,7 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
   List<Stop> _stops = const <Stop>[];
   int? _selectedStopId;
   bool _showStopList = false;
+  List<Report> _reports = const <Report>[];
 
   @override
   void initState() {
@@ -50,6 +54,8 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
       if (!mounted) return;
       ref.read(socketServiceProvider).joinRoute(widget.routeId);
       ref.read(socketServiceProvider).on('route:report_resolved', _onRouteReportResolved);
+      ref.read(socketServiceProvider).on('route:new_report', (_) => _reloadReports());
+      ref.read(socketServiceProvider).on('route:report_confirmed', (_) => _reloadReports());
     });
   }
 
@@ -57,6 +63,8 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
   void dispose() {
     ref.read(socketServiceProvider).leaveRoute(widget.routeId);
     ref.read(socketServiceProvider).off('route:report_resolved');
+    ref.read(socketServiceProvider).off('route:new_report');
+    ref.read(socketServiceProvider).off('route:report_confirmed');
     super.dispose();
   }
 
@@ -71,6 +79,15 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
     AppSnackbar.show(context, msg, SnackbarType.info);
   }
 
+  Future<void> _reloadReports() async {
+    if (!mounted) return;
+    final result = await ref.read(reportsRepositoryProvider).getRouteReports(widget.routeId);
+    if (!mounted) return;
+    if (result is Success<List<Report>>) {
+      setState(() => _reports = result.data);
+    }
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -80,10 +97,12 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
     final results = await Future.wait<dynamic>(<Future<dynamic>>[
       ref.read(routesRepositoryProvider).getById(widget.routeId),
       ref.read(stopsRepositoryProvider).listByRoute(widget.routeId),
+      ref.read(reportsRepositoryProvider).getRouteReports(widget.routeId),
     ]);
 
     final routeResult = results[0] as Result<BusRoute>;
     final stopsResult = results[1] as Result<List<Stop>>;
+    final reportsResult = results[2] as Result<List<Report>>;
 
     if (routeResult is Failure<BusRoute>) {
       setState(() {
@@ -120,6 +139,10 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
       _route = route;
       _stops = stops;
       _selectedStopId = autoSelected;
+      _reports = switch (reportsResult) {
+        Success<List<Report>>(data: final d) => d,
+        _ => const <Report>[],
+      };
       _loading = false;
     });
   }
@@ -201,6 +224,25 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
               ),
               const SizedBox(height: 8),
               RouteActivityBadge(routeId: widget.routeId),
+              if (_reports.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 8),
+                Text(
+                  AppStrings.boardingReportsTitle,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 6),
+                RouteReportsList(
+                  reports: _reports,
+                  onConfirm: (reportId) async {
+                    final result = await ref.read(reportsRepositoryProvider).confirm(reportId);
+                    if (result is Success<void>) {
+                      await _reloadReports();
+                    }
+                  },
+                ),
+              ],
               const SizedBox(height: 20),
               const Divider(),
               const SizedBox(height: 12),

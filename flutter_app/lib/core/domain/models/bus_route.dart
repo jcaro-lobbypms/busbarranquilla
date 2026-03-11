@@ -25,6 +25,7 @@ class BusRoute {
   final bool? hasActiveUsers;
   final bool? hasRecentReport;
   final List<LatLng> geometry;
+  final int? distanceMeters;
 
   const BusRoute({
     required this.id,
@@ -49,6 +50,7 @@ class BusRoute {
     this.hasActiveUsers,
     this.hasRecentReport,
     this.geometry = const <LatLng>[],
+    this.distanceMeters,
   });
 
   factory BusRoute.fromJson(Map<String, dynamic> json) {
@@ -75,6 +77,7 @@ class BusRoute {
       hasActiveUsers: asBoolOrNull(json['has_active_users']),
       hasRecentReport: asBoolOrNull(json['has_recent_report']),
       geometry: asLatLngList(json['geometry']),
+      distanceMeters: asIntOrNull(json['distance_meters']),
     );
   }
 

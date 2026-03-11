@@ -8,6 +8,7 @@ import 'features/auth/providers/auth_notifier.dart';
 import 'features/auth/providers/auth_state.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/register_screen.dart';
+import 'features/map/screens/map_pick_screen.dart';
 import 'features/map/screens/map_screen.dart';
 import 'features/planner/screens/planner_screen.dart';
 import 'features/profile/screens/credits_history_screen.dart';
@@ -91,6 +92,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/profile/trips',
         builder: (BuildContext context, GoRouterState state) => const TripHistoryScreen(),
+      ),
+      GoRoute(
+        path: '/map-pick',
+        builder: (BuildContext context, GoRouterState state) => const MapPickScreen(),
       ),
       ShellRoute(
         builder: (BuildContext context, GoRouterState state, Widget child) {

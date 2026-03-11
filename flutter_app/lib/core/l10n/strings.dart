@@ -163,4 +163,23 @@ abstract final class AppStrings {
   static const reportRouteError = 'No se pudo enviar el reporte';
   static const reportTranconDesc = 'El bus está atascado en tráfico';
   static const reportRutaRealDesc = 'El bus tomó una ruta diferente a la del mapa';
+
+  // Premium benefits
+  static const premiumBenefitsTitle = 'Beneficios Premium';
+  static const premiumActiveUntil = 'Activo hasta';
+
+  // Map trip visuals
+  static const youAreOnBus = '🚌 Estás en el bus';
+  static const activeBusOnRoute = '🚌 Bus activo en ruta';
+
+  // Boarding reports
+  static const boardingReportsTitle = 'Reportes de la ruta';
+  static const boardingReportsEmpty = 'Sin reportes activos';
+
+  // Map pick mode
+  static const mapPickTitle = 'Seleccionar en mapa';
+  static const mapPickInstruction = 'Mueve el mapa hasta el punto deseado';
+  static const mapPickConfirm = 'Confirmar punto';
+  static const mapPickGeocoding = 'Identificando dirección...';
+  static const mapPickError = 'No se pudo identificar el punto. Intenta de nuevo.';
 }

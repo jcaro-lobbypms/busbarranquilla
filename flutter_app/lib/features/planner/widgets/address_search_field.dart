@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/l10n/strings.dart';
 import '../../../core/theme/app_colors.dart';
 import '../models/nominatim_result.dart';
 
@@ -10,12 +11,14 @@ class AddressSearchField extends StatefulWidget {
   final String? initialValue;
   final Future<List<NominatimResult>> Function(String query) onSearch;
   final ValueChanged<NominatimResult> onSelect;
+  final VoidCallback? onPickFromMap;
 
   const AddressSearchField({
     required this.label,
     required this.onSearch,
     required this.onSelect,
     this.initialValue,
+    this.onPickFromMap,
     super.key,
   });
 
@@ -105,7 +108,13 @@ class _AddressSearchFieldState extends State<AddressSearchField> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                   )
-                : const Icon(Icons.search),
+                : widget.onPickFromMap != null
+                    ? IconButton(
+                        icon: const Icon(Icons.map_outlined),
+                        tooltip: AppStrings.mapPickTitle,
+                        onPressed: widget.onPickFromMap,
+                      )
+                    : const Icon(Icons.search),
           ),
           onChanged: _onChanged,
         ),

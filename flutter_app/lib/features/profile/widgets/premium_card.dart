@@ -8,6 +8,7 @@ import '../../../core/error/result.dart';
 import '../../../core/l10n/strings.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/extensions/datetime_extensions.dart';
+import '../../../shared/widgets/app_bottom_sheet.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_snackbar.dart';
 
@@ -44,7 +45,40 @@ class PremiumCard extends ConsumerWidget {
             const SizedBox(height: 12),
             AppButton.secondary(
               label: AppStrings.premiumViewBenefits,
-              onPressed: () {},
+              onPressed: () {
+                AppBottomSheet.show<void>(
+                  context,
+                  title: AppStrings.premiumBenefitsTitle,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      for (final feature in AppStrings.premiumFeatures) ...<Widget>[
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            const Icon(Icons.check_circle, color: AppColors.success, size: 18),
+                            const SizedBox(width: 10),
+                            Expanded(child: Text(feature)),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+                      if (user.premiumExpiresAt != null) ...<Widget>[
+                        const Divider(),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${AppStrings.premiumActiveUntil}: ${user.premiumExpiresAt!.formatDate()}',
+                          style: const TextStyle(
+                            color: AppColors.success,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              },
             ),
           ],
         ),

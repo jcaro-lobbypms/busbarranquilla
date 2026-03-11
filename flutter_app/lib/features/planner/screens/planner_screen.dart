@@ -6,10 +6,12 @@ import '../../../core/domain/models/bus_route.dart';
 import '../../../core/domain/models/plan_result.dart';
 import '../../../core/l10n/strings.dart';
 import '../../../core/location/location_service.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_snackbar.dart';
 import '../../../shared/widgets/empty_view.dart';
 import '../../../shared/widgets/loading_indicator.dart';
+import '../../../shared/widgets/route_activity_badge.dart';
 import '../../../shared/widgets/route_code_badge.dart';
 import '../models/nominatim_result.dart';
 import '../providers/favorites_provider.dart';
@@ -165,6 +167,12 @@ class _PlannerScreenState extends ConsumerState<PlannerScreen> {
                 initialValue: selectedOrigin?.displayName,
                 onSearch: notifier.searchAddress,
                 onSelect: notifier.setOrigin,
+                onPickFromMap: () async {
+                  final result = await context.push<NominatimResult>('/map-pick');
+                  if (result != null) {
+                    notifier.setOrigin(result);
+                  }
+                },
               ),
               const SizedBox(height: 10),
               AddressSearchField(
@@ -172,6 +180,12 @@ class _PlannerScreenState extends ConsumerState<PlannerScreen> {
                 initialValue: selectedDest?.displayName,
                 onSearch: notifier.searchAddress,
                 onSelect: notifier.setDestination,
+                onPickFromMap: () async {
+                  final result = await context.push<NominatimResult>('/map-pick');
+                  if (result != null) {
+                    notifier.setDestination(result);
+                  }
+                },
               ),
               if (nearbyRoutes.isNotEmpty && state is! PlannerResults) ...<Widget>[
                 const SizedBox(height: 12),
@@ -192,15 +206,51 @@ class _PlannerScreenState extends ConsumerState<PlannerScreen> {
                 ),
                 const SizedBox(height: 6),
                 ...nearbyRoutes.map(
-                  (route) => ListTile(
+                  (route) => InkWell(
                     onTap: () => context.push('/trip/confirm?routeId=${route.id}'),
-                    leading: RouteCodeBadge(code: route.code),
-                    title: Text(route.name),
-                    subtitle: (route.companyName ?? route.company ?? '').isNotEmpty
-                        ? Text(route.companyName ?? route.company ?? '')
-                        : null,
-                    trailing: const Icon(Icons.chevron_right),
-                    contentPadding: EdgeInsets.zero,
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Theme.of(context).dividerColor),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        children: <Widget>[
+                          RouteCodeBadge(code: route.code),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Text(route.name, style: Theme.of(context).textTheme.bodyMedium),
+                                if ((route.companyName ?? route.company ?? '').isNotEmpty)
+                                  Text(
+                                    route.companyName ?? route.company ?? '',
+                                    style: Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                const SizedBox(height: 4),
+                                RouteActivityBadge(routeId: route.id),
+                              ],
+                            ),
+                          ),
+                          if (route.distanceMeters != null) ...<Widget>[
+                            const SizedBox(width: 8),
+                            Text(
+                              '${route.distanceMeters} m',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.forDistance(route.distanceMeters!),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(width: 4),
+                          const Icon(Icons.chevron_right, size: 18),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ],
