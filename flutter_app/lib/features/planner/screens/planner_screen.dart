@@ -20,6 +20,8 @@ import '../../../shared/widgets/loading_indicator.dart';
 import '../../../shared/widgets/route_activity_badge.dart';
 import '../../../shared/widgets/route_code_badge.dart';
 import '../../map/providers/map_active_positions_provider.dart';
+import '../../map/providers/map_provider.dart';
+import '../../map/providers/map_state.dart';
 import '../models/nominatim_result.dart';
 import '../providers/favorites_provider.dart';
 import '../providers/planner_notifier.dart';
@@ -55,9 +57,22 @@ class _PlannerScreenState extends ConsumerState<PlannerScreen> {
   }
 
   Future<void> _setCurrentLocationAsOrigin() async {
+    // Prefer position already in map state (zero cost).
+    final mapState = ref.read(mapNotifierProvider);
+    if (mapState is MapReady && mapState.userPosition != null) {
+      ref.read(plannerNotifierProvider.notifier).setOrigin(
+            NominatimResult(
+              displayName: AppStrings.currentLocationLabel,
+              lat: mapState.userPosition!.latitude,
+              lng: mapState.userPosition!.longitude,
+            ),
+          );
+      return;
+    }
+
+    // Fallback: ask GPS (happens only if map hasn't loaded yet).
     final position = await LocationService.getCurrentPosition();
     if (position == null || !mounted) return;
-
     ref.read(plannerNotifierProvider.notifier).setOrigin(
           NominatimResult(
             displayName: AppStrings.currentLocationLabel,

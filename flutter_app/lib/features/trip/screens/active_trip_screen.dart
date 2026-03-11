@@ -28,17 +28,11 @@ class ActiveTripScreen extends ConsumerStatefulWidget {
 }
 
 class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
-  Timer? _ticker;
-  Duration _duration = Duration.zero;
   bool _suspiciousDialogShown = false;
 
   @override
   void initState() {
     super.initState();
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
-    });
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(tripNotifierProvider.notifier).setReportResolvedCallback((msg) {
@@ -158,15 +152,7 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
 
   @override
   void dispose() {
-    _ticker?.cancel();
     super.dispose();
-  }
-
-  String _durationText(Duration duration) {
-    final h = duration.inHours.toString().padLeft(2, '0');
-    final m = (duration.inMinutes % 60).toString().padLeft(2, '0');
-    final s = (duration.inSeconds % 60).toString().padLeft(2, '0');
-    return '$h:$m:$s';
   }
 
   String _dropoffMessage(DropoffAlert alert) {
@@ -263,8 +249,6 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
     }
 
     final active = state as TripActive;
-    final startedAt = active.trip.startedAt;
-    _duration = startedAt != null ? DateTime.now().difference(startedAt) : Duration.zero;
 
     final destinationStop = active.trip.destinationStopId != null
         ? (() {
@@ -334,7 +318,7 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: <Widget>[
-                  Text('${AppStrings.tripDurationLabel}: ${_durationText(_duration)}'),
+                  _TripDurationText(startedAt: active.trip.startedAt),
                   Text('${AppStrings.tripCreditsLabel}: ${active.trip.creditsEarned}'),
                 ],
               ),
@@ -422,6 +406,45 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
         icon: const Icon(Icons.report),
       ),
     );
+  }
+}
+
+/// Isolated timer widget — only this small widget rebuilds every second.
+class _TripDurationText extends StatefulWidget {
+  final DateTime? startedAt;
+
+  const _TripDurationText({this.startedAt});
+
+  @override
+  State<_TripDurationText> createState() => _TripDurationTextState();
+}
+
+class _TripDurationTextState extends State<_TripDurationText> {
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final duration = widget.startedAt != null
+        ? DateTime.now().difference(widget.startedAt!)
+        : Duration.zero;
+    final h = duration.inHours.toString().padLeft(2, '0');
+    final m = (duration.inMinutes % 60).toString().padLeft(2, '0');
+    final s = (duration.inSeconds % 60).toString().padLeft(2, '0');
+    return Text('${AppStrings.tripDurationLabel}: $h:$m:$s');
   }
 }
 

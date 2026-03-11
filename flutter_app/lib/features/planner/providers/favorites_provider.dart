@@ -18,17 +18,19 @@ class FavoritesNotifier extends AsyncNotifier<List<BusRoute>> {
 
   Future<void> addFavorite(int routeId) async {
     final result = await ref.read(usersRepositoryProvider).addFavorite(routeId);
-    if (result is Success<void>) {
-      state = const AsyncLoading();
-      state = AsyncData(await load());
-    }
+    if (result is! Success<void>) return;
+    // Re-fetch to get full route data (name, code, etc.) for the new favorite.
+    state = AsyncData(await load());
   }
 
   Future<void> removeFavorite(int routeId) async {
+    // Optimistic update: remove instantly from UI, no loading flash.
+    final previous = state.valueOrNull ?? const <BusRoute>[];
+    state = AsyncData(previous.where((r) => r.id != routeId).toList());
     final result = await ref.read(usersRepositoryProvider).removeFavorite(routeId);
-    if (result is Success<void>) {
-      state = const AsyncLoading();
-      state = AsyncData(await load());
+    // Rollback if the API call failed.
+    if (result is! Success<void> && state.hasValue) {
+      state = AsyncData(previous);
     }
   }
 

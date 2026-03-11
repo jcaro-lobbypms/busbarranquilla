@@ -16,6 +16,8 @@ import '../../../core/error/result.dart';
 import '../../../core/l10n/strings.dart';
 import '../../../core/location/location_service.dart';
 import '../../../core/socket/socket_service.dart';
+import '../../map/providers/map_provider.dart';
+import '../../map/providers/map_state.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_snackbar.dart';
@@ -156,12 +158,11 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
       _loading = false;
     });
 
-    // Fetch user position for map display (non-blocking, best-effort)
-    LocationService.getCurrentPosition().then((pos) {
-      if (pos != null && mounted) {
-        setState(() => _userPosition = LatLng(pos.latitude, pos.longitude));
-      }
-    });
+    // Read position instantly from map state — no GPS call needed.
+    final mapState = ref.read(mapNotifierProvider);
+    if (mapState is MapReady && mapState.userPosition != null && mounted) {
+      setState(() => _userPosition = mapState.userPosition);
+    }
   }
 
   Stop? get _selectedStop {

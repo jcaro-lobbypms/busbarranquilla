@@ -7,7 +7,8 @@ import '../../../core/data/repositories/routes_repository.dart';
 import '../../../core/domain/models/bus_route.dart';
 import '../../../core/error/result.dart';
 import '../../../core/l10n/strings.dart';
-import '../../../core/location/location_service.dart';
+import '../../map/providers/map_provider.dart';
+import '../../map/providers/map_state.dart';
 import '../../../shared/widgets/app_text_field.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/loading_indicator.dart';
@@ -48,38 +49,66 @@ class _BoardingScreenState extends ConsumerState<BoardingScreen> {
       _error = null;
     });
 
-    final results = await Future.wait<dynamic>(<Future<dynamic>>[
-      ref.read(routesRepositoryProvider).list(),
-      LocationService.getCurrentPosition(),
-    ]);
+    // 1. Reuse position already obtained by MapScreen (zero cost).
+    // 2. Fall back to last known position from OS cache (instant).
+    // 3. Last resort: fresh fix with medium accuracy + 5s timeout.
+    double? lat;
+    double? lng;
 
-    final routesResult = results[0] as Result<List<BusRoute>>;
-    final position = results[1] as Position?;
-
-    if (position != null) {
-      final nearbyResult = await ref.read(routesRepositoryProvider).nearby(
-        lat: position.latitude,
-        lng: position.longitude,
-        radius: 0.3,
-      );
-      if (nearbyResult is Success<List<BusRoute>>) {
-        setState(() {
-          _nearbyRoutes = nearbyResult.data;
-        });
+    final mapState = ref.read(mapNotifierProvider);
+    if (mapState is MapReady && mapState.userPosition != null) {
+      lat = mapState.userPosition!.latitude;
+      lng = mapState.userPosition!.longitude;
+    } else {
+      final cached = await Geolocator.getLastKnownPosition();
+      if (cached != null) {
+        lat = cached.latitude;
+        lng = cached.longitude;
+      } else {
+        final permitted = await Geolocator.checkPermission();
+        if (permitted == LocationPermission.whileInUse ||
+            permitted == LocationPermission.always) {
+          try {
+            final fresh = await Geolocator.getCurrentPosition(
+              locationSettings: const LocationSettings(
+                accuracy: LocationAccuracy.medium,
+                timeLimit: Duration(seconds: 5),
+              ),
+            );
+            lat = fresh.latitude;
+            lng = fresh.longitude;
+          } catch (_) {
+            // proceed without position
+          }
+        }
       }
     }
 
+    // Launch routes and nearby in parallel.
+    final routesFuture = ref.read(routesRepositoryProvider).list();
+    final nearbyFuture = lat != null && lng != null
+        ? ref.read(routesRepositoryProvider).nearby(
+            lat: lat,
+            lng: lng,
+            radius: 0.3,
+          )
+        : null;
+
+    // Show routes as soon as they arrive — don't block on nearby.
+    final routesResult = await routesFuture;
     switch (routesResult) {
       case Success<List<BusRoute>>(data: final routes):
-        setState(() {
-          _routes = routes;
-          _loading = false;
-        });
+        if (mounted) setState(() { _routes = routes; _loading = false; });
       case Failure(error: final error):
-        setState(() {
-          _error = error.message;
-          _loading = false;
-        });
+        if (mounted) setState(() { _error = error.message; _loading = false; });
+    }
+
+    // Nearby resolves whenever ready (may already be done).
+    if (nearbyFuture != null) {
+      final nearbyResult = await nearbyFuture;
+      if (nearbyResult is Success<List<BusRoute>> && mounted) {
+        setState(() { _nearbyRoutes = nearbyResult.data; });
+      }
     }
   }
 

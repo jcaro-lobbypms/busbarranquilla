@@ -159,13 +159,13 @@ class MapNotifier extends Notifier<MapState> {
       final lng = data['longitude'];
       if (tripId is! int || lat is! num || lng is! num) return;
 
-      final updated = current.buses.map((bus) {
-        if (bus.id != tripId) return bus;
-        return bus.copyWith(
-          currentLatitude: lat.toDouble(),
-          currentLongitude: lng.toDouble(),
-        );
-      }).toList(growable: false);
+      final idx = current.buses.indexWhere((b) => b.id == tripId);
+      if (idx == -1) return;
+      final updated = List<ActiveTrip>.of(current.buses);
+      updated[idx] = updated[idx].copyWith(
+        currentLatitude: lat.toDouble(),
+        currentLongitude: lng.toDouble(),
+      );
 
       state = current.copyWith(buses: updated);
     });

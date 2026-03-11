@@ -27,6 +27,7 @@ final nominatimDioProvider = Provider<Dio>((ref) {
 });
 
 class PlannerNotifier extends Notifier<PlannerState> {
+  static final RegExp _colombianAddressRe = RegExp(r'\s+[Nn]\s+');
   static const double _minLat = 10.82;
   static const double _maxLat = 11.08;
   static const double _minLng = -74.98;
@@ -145,10 +146,7 @@ class PlannerNotifier extends Notifier<PlannerState> {
   ///   "Calle 30 N 42"  → "Calle 30 #42"
   /// The "N" separator (case-insensitive, surrounded by spaces) is replaced with "#".
   static String _normalizeColombianAddress(String query) {
-    return query.replaceAllMapped(
-      RegExp(r'\s+[Nn]\s+'),
-      (match) => ' #',
-    );
+    return query.replaceAllMapped(_colombianAddressRe, (match) => ' #');
   }
 
   Future<void> planRoute({

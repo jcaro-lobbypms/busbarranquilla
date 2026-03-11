@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/l10n/strings.dart';
 import '../planner/providers/planner_notifier.dart';
 import '../trip/providers/trip_notifier.dart';
-import '../trip/providers/trip_state.dart';
+import '../trip/providers/trip_state.dart' show TripActive;
 
 class MainShell extends ConsumerWidget {
   final Widget child;
@@ -25,8 +25,8 @@ class MainShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final location = GoRouterState.of(context).matchedLocation;
     final baseIndex = _indexFromLocation(location);
-    final tripState = ref.watch(tripNotifierProvider);
-    final currentIndex = tripState is TripActive ? 2 : baseIndex;
+    final isOnTrip = ref.watch(tripNotifierProvider.select((s) => s is TripActive));
+    final currentIndex = isOnTrip ? 2 : baseIndex;
 
     return Scaffold(
       body: child,
