@@ -23,13 +23,29 @@ import 'features/trip/screens/boarding_confirm_screen.dart';
 import 'features/trip/screens/boarding_screen.dart';
 import 'features/trip/screens/stop_select_screen.dart';
 
+// Notifier that lets GoRouter re-evaluate its redirect when auth/onboarding
+// state changes, without recreating the GoRouter instance.
+class _RouterRefreshNotifier extends ChangeNotifier {
+  void notify() => notifyListeners();
+}
+
 final appRouterProvider = Provider<GoRouter>((ref) {
-  final authState = ref.watch(authNotifierProvider);
-  final onboardingAsync = ref.watch(onboardingDoneProvider);
+  final refreshNotifier = _RouterRefreshNotifier();
+
+  // Listen to auth and onboarding changes — only notify GoRouter to
+  // re-run redirect, never rebuild the router itself.
+  ref.listen(authNotifierProvider, (_, __) => refreshNotifier.notify());
+  ref.listen(onboardingDoneProvider, (_, __) => refreshNotifier.notify());
+  ref.onDispose(refreshNotifier.dispose);
 
   return GoRouter(
     initialLocation: '/map',
+    refreshListenable: refreshNotifier,
     redirect: (context, state) {
+      // Read current values at redirect time (not captured at build time).
+      final authState = ref.read(authNotifierProvider);
+      final onboardingAsync = ref.read(onboardingDoneProvider);
+
       final isGoingToAuth =
           state.matchedLocation == '/login' || state.matchedLocation == '/register';
       final isLoading = state.matchedLocation == '/loading';
@@ -142,6 +158,8 @@ class MiBusApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // GoRouter is created once — do NOT watch auth state here.
+    // Changes trigger GoRouter.refreshListenable instead.
     final router = ref.watch(appRouterProvider);
 
     return MaterialApp.router(

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/l10n/strings.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../features/auth/providers/auth_notifier.dart';
 import '../../../features/auth/providers/auth_state.dart';
 import '../../../shared/widgets/app_button.dart';
@@ -22,6 +23,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   String? _emailError;
   String? _passwordError;
+
+  @override
+  void initState() {
+    super.initState();
+    // If the screen mounts while auth is already in error state (e.g. after a
+    // failed login redirected back here), show the error immediately.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final authState = ref.read(authNotifierProvider);
+      if (authState is AuthErrorState) {
+        AppSnackbar.show(context, authState.message, SnackbarType.error);
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -84,64 +99,123 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final isLoading = authState is AuthLoading;
 
     return Scaffold(
-      appBar: AppBar(title: const Text(AppStrings.loginTitle)),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              AppTextField(
-                label: AppStrings.emailLabel,
-                controller: _emailController,
-                errorText: _emailError,
-                onChanged: (_) {
-                  if (_emailError != null) {
-                    setState(() => _emailError = null);
-                  }
-                },
+      backgroundColor: AppColors.primaryDark,
+      body: Column(
+        children: <Widget>[
+          // ── Header — mismo estilo que el splash ──────────────────────────
+          Expanded(
+            flex: 2,
+            child: SafeArea(
+              bottom: false,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    const Text('🚌', style: TextStyle(fontSize: 64)),
+                    const SizedBox(height: 14),
+                    const Text(
+                      AppStrings.appName,
+                      style: TextStyle(
+                        fontSize: 42,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: -1,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      AppStrings.splashTagline,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.white.withValues(alpha: 0.65),
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 12),
-              AppTextField(
-                label: AppStrings.passwordLabel,
-                controller: _passwordController,
-                obscureText: true,
-                errorText: _passwordError,
-                onChanged: (_) {
-                  if (_passwordError != null) {
-                    setState(() => _passwordError = null);
-                  }
-                },
-              ),
-              const SizedBox(height: 16),
-              AppButton.primary(
-                label: AppStrings.loginSubmit,
-                isLoading: isLoading,
-                onPressed: isLoading ? null : _submit,
-              ),
-              const SizedBox(height: 12),
-              const _OrDivider(),
-              const SizedBox(height: 12),
-              _GoogleSignInButton(
-                isLoading: isLoading,
-                onPressed: isLoading
-                    ? null
-                    : () => ref.read(authNotifierProvider.notifier).loginWithGoogle(),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: <Widget>[
-                  const Text(AppStrings.noAccount),
-                  TextButton(
-                    onPressed: () => context.go('/register'),
-                    child: const Text(AppStrings.goToRegister),
-                  ),
-                ],
-              ),
-            ],
+            ),
           ),
-        ),
+
+          // ── Formulario ───────────────────────────────────────────────────
+          Expanded(
+            flex: 3,
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              ),
+              child: SafeArea(
+                top: false,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Text(
+                        AppStrings.loginTitle,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                      const SizedBox(height: 20),
+                      AppTextField(
+                        label: AppStrings.emailLabel,
+                        controller: _emailController,
+                        errorText: _emailError,
+                        onChanged: (_) {
+                          if (_emailError != null) {
+                            setState(() => _emailError = null);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      AppTextField(
+                        label: AppStrings.passwordLabel,
+                        controller: _passwordController,
+                        obscureText: true,
+                        errorText: _passwordError,
+                        onChanged: (_) {
+                          if (_passwordError != null) {
+                            setState(() => _passwordError = null);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 20),
+                      AppButton.primary(
+                        label: AppStrings.loginSubmit,
+                        isLoading: isLoading,
+                        onPressed: isLoading ? null : _submit,
+                      ),
+                      const SizedBox(height: 14),
+                      const _OrDivider(),
+                      const SizedBox(height: 14),
+                      _GoogleSignInButton(
+                        isLoading: isLoading,
+                        onPressed: isLoading
+                            ? null
+                            : () => ref
+                                .read(authNotifierProvider.notifier)
+                                .loginWithGoogle(),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: <Widget>[
+                          const Text(AppStrings.noAccount),
+                          TextButton(
+                            onPressed: () => context.go('/register'),
+                            child: const Text(AppStrings.goToRegister),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -157,10 +231,7 @@ class _OrDivider extends StatelessWidget {
         const Expanded(child: Divider()),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Text(
-            'o',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
+          child: Text('o', style: Theme.of(context).textTheme.bodySmall),
         ),
         const Expanded(child: Divider()),
       ],
