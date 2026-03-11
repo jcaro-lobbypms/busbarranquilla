@@ -366,7 +366,17 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
                 onChangeTap: () => setState(() => _showStopList = !_showStopList),
                 showingList: _showStopList,
                 onPickFromMap: () async {
-                  final result = await context.push<NominatimResult>('/map-pick');
+                  // Center on the already-selected stop, or user position
+                  final stop = selectedStop;
+                  final String query;
+                  if (stop != null) {
+                    query = '?lat=${stop.latitude}&lng=${stop.longitude}';
+                  } else if (_userPosition != null) {
+                    query = '?lat=${_userPosition!.latitude}&lng=${_userPosition!.longitude}';
+                  } else {
+                    query = '';
+                  }
+                  final result = await context.push<NominatimResult>('/map-pick$query');
                   if (result == null || !mounted) return;
                   if (_stops.isEmpty) return;
                   Stop? nearest;

@@ -2,6 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## AI_CONTEXT.md — Regla obligatoria
+
+**`AI_CONTEXT.md` existe en la raíz del proyecto y debe mantenerse actualizado.**
+Después de cada cambio relevante al proyecto (nueva feature, fix, nuevo endpoint, cambio de arquitectura, nuevo patrón de código, cambio en DB schema, cambio en assets, etc.), actualiza las secciones correspondientes de `AI_CONTEXT.md`:
+- Nuevos endpoints → sección "API endpoints principales"
+- Cambios en DB → sección "Esquema de base de datos"
+- Nuevos patrones o reglas → sección "Patrones de código importantes"
+- Nuevas features completadas → sección "Estado del proyecto"
+- Cambios en rutas Flutter → sección "Rutas de navegación Flutter"
+- Cambios en flujos clave → sección "Flujos clave"
+- Actualizar siempre la fecha de "Última actualización" al final del archivo.
+
 ## What is this?
 
 **MiBus** (mibus.co) is a collaborative real-time public transport app for Barranquilla and the Metropolitan Area (Colombia). Users report bus locations in real time — the passenger IS the GPS. The system uses a credit economy to incentivize participation and offers premium subscription plans (Wompi payments).

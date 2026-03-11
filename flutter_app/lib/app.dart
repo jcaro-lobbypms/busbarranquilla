@@ -120,7 +120,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/map-pick',
-        builder: (BuildContext context, GoRouterState state) => const MapPickScreen(),
+        builder: (BuildContext context, GoRouterState state) {
+          final lat = double.tryParse(state.uri.queryParameters['lat'] ?? '');
+          final lng = double.tryParse(state.uri.queryParameters['lng'] ?? '');
+          return MapPickScreen(initialLat: lat, initialLng: lng);
+        },
       ),
       ShellRoute(
         builder: (BuildContext context, GoRouterState state, Widget child) {

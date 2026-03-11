@@ -225,7 +225,10 @@ class _PlannerScreenState extends ConsumerState<PlannerScreen> {
                 onSearch: notifier.searchAddress,
                 onSelect: notifier.setOrigin,
                 onPickFromMap: () async {
-                  final result = await context.push<NominatimResult>('/map-pick');
+                  final lat = selectedOrigin?.lat;
+                  final lng = selectedOrigin?.lng;
+                  final query = lat != null && lng != null ? '?lat=$lat&lng=$lng' : '';
+                  final result = await context.push<NominatimResult>('/map-pick$query');
                   if (result != null) {
                     notifier.setOrigin(result);
                   }
@@ -238,7 +241,10 @@ class _PlannerScreenState extends ConsumerState<PlannerScreen> {
                 onSearch: notifier.searchAddress,
                 onSelect: notifier.setDestination,
                 onPickFromMap: () async {
-                  final result = await context.push<NominatimResult>('/map-pick');
+                  final lat = selectedDest?.lat;
+                  final lng = selectedDest?.lng;
+                  final query = lat != null && lng != null ? '?lat=$lat&lng=$lng' : '';
+                  final result = await context.push<NominatimResult>('/map-pick$query');
                   if (result != null) {
                     notifier.setDestination(result);
                   }
