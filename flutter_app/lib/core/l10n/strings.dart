@@ -215,6 +215,13 @@ abstract final class AppStrings {
 
   static const String ok = 'OK';
   static const String gpsLostBanner = 'GPS perdido — verifica tu señal';
+  // GPS required dialog
+  static const String gpsRequiredTitle = 'GPS desactivado';
+  static const String gpsRequiredBody =
+      'Necesitas tener el GPS activo para iniciar un viaje. '
+      'Sin él no podemos transmitir tu ubicación.';
+  static const String gpsRequiredOpenSettings = 'Activar GPS';
+
   static const String boardingDistanceTitle = 'Estás lejos de esta ruta';
   static const String boardingDistanceBody =
       'Pareces estar a más de 800 m de la ruta. ¿Seguro que quieres subir?';

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -173,7 +174,38 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
     return null;
   }
 
+  Future<void> _showGpsRequiredDialog() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text(AppStrings.gpsRequiredTitle),
+        content: const Text(AppStrings.gpsRequiredBody),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text(AppStrings.cancel),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              Geolocator.openLocationSettings();
+            },
+            child: const Text(AppStrings.gpsRequiredOpenSettings),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _confirm({bool force = false}) async {
+    // GPS service must be enabled before starting a trip.
+    final gpsEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!gpsEnabled) {
+      await _showGpsRequiredDialog();
+      return;
+    }
+
     if (!force && _userPosition != null && _route != null) {
       final dist = _minDistToGeometry(
         _userPosition!.latitude,
