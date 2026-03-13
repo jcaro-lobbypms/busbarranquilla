@@ -25,6 +25,7 @@ abstract final class ApiPaths {
   static const tripLocation = '/api/trips/location';
   static const tripEnd = '/api/trips/end';
   static const tripCurrent = '/api/trips/current';
+  static const tripDestination = '/api/trips/destination';
   static const tripBuses = '/api/trips/buses';
   static const tripHistory = '/api/trips/history';
 

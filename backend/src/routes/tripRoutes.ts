@@ -7,6 +7,7 @@ import {
   endTrip,
   getTripCurrent,
   getTripHistory,
+  updateTripDestination,
 } from '../controllers/tripController';
 import { authMiddleware } from '../middlewares/authMiddleware';
 
@@ -20,5 +21,6 @@ router.get('/buses', getActiveBuses); // público: cualquier visitante ve los bu
 router.post('/start', authMiddleware, startTrip);
 router.post('/location', authMiddleware, updateLocation);
 router.post('/end', authMiddleware, endTrip);
+router.patch('/destination', authMiddleware, updateTripDestination);
 
 export default router;

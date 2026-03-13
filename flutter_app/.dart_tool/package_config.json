@@ -146,6 +146,12 @@
       "languageVersion": "3.4"
     },
     {
+      "name": "cross_file",
+      "rootUri": "file:///Users/jesuscaro/.pub-cache/hosted/pub.dev/cross_file-0.3.5+2",
+      "packageUri": "lib/",
+      "languageVersion": "3.8"
+    },
+    {
       "name": "crypto",
       "rootUri": "file:///Users/jesuscaro/.pub-cache/hosted/pub.dev/crypto-3.0.7",
       "packageUri": "lib/",
@@ -738,6 +744,18 @@
       "rootUri": "file:///Users/jesuscaro/.pub-cache/hosted/pub.dev/riverpod_generator-2.6.5",
       "packageUri": "lib/",
       "languageVersion": "2.17"
+    },
+    {
+      "name": "share_plus",
+      "rootUri": "file:///Users/jesuscaro/.pub-cache/hosted/pub.dev/share_plus-10.1.4",
+      "packageUri": "lib/",
+      "languageVersion": "3.4"
+    },
+    {
+      "name": "share_plus_platform_interface",
+      "rootUri": "file:///Users/jesuscaro/.pub-cache/hosted/pub.dev/share_plus_platform_interface-5.0.2",
+      "packageUri": "lib/",
+      "languageVersion": "2.18"
     },
     {
       "name": "shared_preferences",

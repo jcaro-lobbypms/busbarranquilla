@@ -110,6 +110,27 @@ class TripNotifier extends Notifier<TripState> {
     _bindSocketRouteListeners(routeId);
     _startLocationBroadcast();
     _startMonitors(activeState, trip.destinationStopId);
+
+    // Restore map-picked destination if it was persisted (no real stop, but custom lat/lng saved).
+    // Must run AFTER _startMonitors because that may have set dropoffPrompt=true for free users
+    // (destinationStopId == null). We override it: user already paid credits in the previous session.
+    if (trip.destinationStopId == null &&
+        trip.destinationLat != null &&
+        trip.destinationLng != null) {
+      final syntheticStop = Stop(
+        id: -1,
+        routeId: routeId,
+        name: trip.destinationStopName ?? 'Destino',
+        latitude: trip.destinationLat!,
+        longitude: trip.destinationLng!,
+        stopOrder: 0,
+      );
+      _startDropoffMonitor(syntheticStop, stops);
+      if (state is TripActive) {
+        state = (state as TripActive).copyWith(dropoffPrompt: false);
+      }
+    }
+
     _startOccupancyPolling(routeId);
   }
 
@@ -437,6 +458,7 @@ class TripNotifier extends Notifier<TripState> {
     );
     _startDropoffMonitor(syntheticStop, active.stops);
     state = active.copyWith(dropoffPrompt: false);
+    unawaited(ref.read(tripsRepositoryProvider).updateDestination(lat, lng, label));
   }
 
   /// Updates destination during an active trip without charging credits again.
@@ -452,6 +474,7 @@ class TripNotifier extends Notifier<TripState> {
       stopOrder: 0,
     );
     _startDropoffMonitor(syntheticStop, active.stops);
+    unawaited(ref.read(tripsRepositoryProvider).updateDestination(lat, lng, label));
   }
 
   /// Sets a destination on an already-active trip and starts dropoff monitoring.

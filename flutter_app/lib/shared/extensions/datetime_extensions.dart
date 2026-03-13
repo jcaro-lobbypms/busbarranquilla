@@ -15,7 +15,7 @@ extension DateTimeExtensions on DateTime {
     }
 
     final days = diff.inDays;
-    return 'Hace ${days * 24} h';
+    return 'Hace $days día${days == 1 ? '' : 's'}';
   }
 
   String formatDate() {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart' show Share;
 
 import '../../../core/domain/models/user.dart';
 import '../../../core/l10n/strings.dart';
@@ -345,18 +346,31 @@ class _ReferralTile extends StatelessWidget {
               style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
             ),
       trailing: code != null
-          ? IconButton(
-              icon: const Icon(Icons.copy_rounded, size: 20, color: AppColors.textSecondary),
-              onPressed: () async {
-                await Clipboard.setData(ClipboardData(text: code));
-                if (context.mounted) {
-                  AppSnackbar.show(
-                    context,
-                    AppStrings.referralCodeCopied,
-                    SnackbarType.success,
-                  );
-                }
-              },
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                IconButton(
+                  icon: const Icon(Icons.copy_rounded, size: 20, color: AppColors.textSecondary),
+                  onPressed: () async {
+                    await Clipboard.setData(ClipboardData(text: code));
+                    if (context.mounted) {
+                      AppSnackbar.show(
+                        context,
+                        AppStrings.referralCodeCopied,
+                        SnackbarType.success,
+                      );
+                    }
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.share_rounded, size: 20, color: AppColors.textSecondary),
+                  onPressed: () {
+                    Share.share(
+                      '${AppStrings.referralShareText} $code\nhttps://mibus.co',
+                    );
+                  },
+                ),
+              ],
             )
           : null,
       isThreeLine: false,

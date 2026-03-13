@@ -183,6 +183,7 @@ abstract final class AppStrings {
   static const referralCodeCopied = 'Código copiado al portapapeles';
   static const referralCodeShare = 'Comparte tu código y gana +25 créditos por cada amigo';
   static const referralCodeNone = 'Tu código se genera al registrarte';
+  static const referralShareText = '¡Únete a MiBus! Usa mi código y gana 25 créditos:';
 
   // Route update voting
   static const reportRouteTitle = 'Reportar problema de ruta';

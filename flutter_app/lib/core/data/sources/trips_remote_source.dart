@@ -36,4 +36,12 @@ class TripsRemoteSource {
     final response = await _dio.get(ApiPaths.tripHistory);
     return response.data as Map<String, dynamic>;
   }
+
+  Future<void> updateDestination(double lat, double lng, String? name) async {
+    await _dio.patch(ApiPaths.tripDestination, data: <String, dynamic>{
+      'latitude': lat,
+      'longitude': lng,
+      'name': name,
+    });
+  }
 }

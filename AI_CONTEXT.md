@@ -187,7 +187,7 @@ stops          — id, route_id, name, latitude, longitude, stop_order
 reports        — id, user_id, route_id, type, lat, lng, is_active, confirmations, expires_at(+30min), resolved_at
 report_confirmations — report_id, user_id (UNIQUE)
 credit_transactions  — user_id, amount, type, description
-active_trips   — user_id, route_id, current_lat, current_lng, destination_stop_id, is_active, total_distance_meters
+active_trips   — user_id, route_id, current_lat, current_lng, destination_stop_id, is_active, total_distance_meters, custom_destination_lat, custom_destination_lng, custom_destination_name
 user_favorite_routes — user_id, route_id (UNIQUE)
 payments       — user_id, wompi_reference, plan, amount_cents, status(pending|approved|declined)
 route_update_reports — route_id, user_id, tipo(trancon|ruta_real), reported_geometry JSONB (UNIQUE por usuario+ruta)
@@ -196,6 +196,7 @@ route_update_reports — route_id, user_id, tipo(trancon|ruta_real), reported_ge
 **Campos clave:**
 - `routes.manually_edited_at` — se pone en `PUT /routes/:id`, se limpia en `regenerate-geometry`
 - `active_trips.total_distance_meters` — acumulado en cada `updateLocation` via Haversine (para bono de completar viaje ≥2 km)
+- `active_trips.custom_destination_lat/lng/name` — destino mapeado (punto libre, no parada real); persiste entre reinicios de app
 - `reports.expires_at` — 30 min desde creación
 
 ---
@@ -227,8 +228,9 @@ PATCH /api/routes/:id/update-report/reentry — registrar re-ingreso a la ruta {
 GET  /api/trips/current     — viaje activo del usuario (auth)
 POST /api/trips/start       — iniciar viaje { routeId, destinationStopId? } (auth)
 PATCH /api/trips/update-location — { latitude, longitude } (auth)
-POST /api/trips/end         — terminar viaje (auth)
-GET  /api/trips/history     — últimos 20 viajes completados (auth)
+POST  /api/trips/end         — terminar viaje (auth)
+GET   /api/trips/history     — últimos 20 viajes completados (auth)
+PATCH /api/trips/destination — guardar destino personalizado { latitude, longitude, name? } (auth)
 ```
 
 ### Reportes
@@ -666,4 +668,4 @@ busbarranquilla/
 ---
 
 *Este archivo se actualiza automáticamente con cada cambio relevante al proyecto MiBus.*
-*Última actualización: 2026-03-13 (v9)*
+*Última actualización: 2026-03-13 (v10)*

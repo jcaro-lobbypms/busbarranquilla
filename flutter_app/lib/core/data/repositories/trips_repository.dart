@@ -90,6 +90,14 @@ class TripsRepository {
       return const Failure<List<TripHistoryItem>>(UnknownError());
     }
   }
+
+  Future<void> updateDestination(double lat, double lng, String? name) async {
+    try {
+      await _source.updateDestination(lat, lng, name);
+    } catch (_) {
+      // Fire-and-forget — silently ignore failures
+    }
+  }
 }
 
 final tripsRepositoryProvider = Provider<TripsRepository>((ref) {
