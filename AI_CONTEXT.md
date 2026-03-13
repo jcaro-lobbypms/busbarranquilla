@@ -445,8 +445,17 @@ solo si el cache es null.
 `TripNotifier.dropoffMonitorDestination` → getter público que expone `_dropoffMonitor?.destination` como `LatLng?`
 `TripNotifier.hasDropoffMonitor` → bool; si `true` → `updateDestinationByLatLng()` (gratis); si `false` → `setDestinationByLatLng()` (cobra 5 cr)
 
-**IMPORTANTE — `active_trips` NO tiene columnas `destination_lat/destination_lng`:**
-`ActiveTrip.destinationLat/Lng` en el modelo Dart nunca se populan desde el backend. La fuente de verdad del destino durante un viaje es `_dropoffMonitor.destination` (en memoria) o `trip.destinationStopId` (persistido en DB).
+**Persistencia del destino entre reinicios de app:**
+`active_trips` tiene columnas `custom_destination_lat/lng/name` para guardar destinos seleccionados en el mapa (puntos libres). El endpoint `PATCH /api/trips/destination` los guarda y limpia `destination_stop_id = NULL`.
+
+`GET /api/trips/current` usa `COALESCE(s.latitude, at.custom_destination_lat)` para retornar siempre las coords correctas sin importar si el destino es parada real o punto libre.
+
+`_recoverActiveTrip()` en `TripNotifier` distingue 3 casos al restaurar el viaje:
+- `destinationStopId != null` → parada real → busca el stop y arranca `DropoffMonitor` normal
+- `destinationStopId == null && destinationLat != null` → punto libre → crea `Stop` sintético (`id: -1`) y arranca `DropoffMonitor`
+- Sin destino → no arranca monitor
+
+`setDestinationByLatLng()` y `updateDestinationByLatLng()` hacen `unawaited(tripsRepository.updateDestination(...))` para persistir el destino en background (fire-and-forget silencioso).
 
 ### Flutter — Durante viaje activo: solo un icono de bus (el del usuario)
 
@@ -602,7 +611,7 @@ Future<void>.delayed(const Duration(milliseconds: 700), HapticFeedback.heavyImpa
 - **MapScreen durante viaje**: muestra polilínea del viaje activo + marcador de destino (bandera verde) cuando `TripActive.stops` tiene la parada destino
 - **MapPickScreen durante viaje**: muestra polilínea de la ruta activa como referencia visual
 - **Ruta del mapa (MapScreen)**: la feed route solo se muestra cuando NO hay viaje activo (`!isOnTrip`)
-- **Perfil rediseñado**: sin AppBar, hero header con `primaryDark` + avatar circular con iniciales en `accent` + chips de rol/premium/trial; tarjeta de créditos con ícono dorado y número grande; menú de navegación con `ListTile` (íconos semánticos); código de referido integrado como tile con copy button
+- **Perfil rediseñado**: sin AppBar, hero header con `primaryDark` + avatar circular con iniciales en `accent` + chips de rol/premium/trial; tarjeta de créditos con ícono dorado y número grande; menú de navegación con `ListTile` (íconos semánticos); código de referido integrado como tile con **copy button + share button** (`share_plus ^10.0.0`, `Share.share(text)`)
 - **Historial de viajes rediseñado**: barra de resumen (viajes + créditos + tiempo) con fondo `primaryDark`; cards con borde izquierdo en color de ruta; fechas relativas ("Hoy", "Ayer", día de semana); créditos con ícono moneda dorado
 - **CreditHistoryTile rediseñado**: íconos semánticos por tipo de transacción (bus/viaje, reporte, regalo/bono, alerta, referido); contenedor con color de fondo suave; monto con mayor peso tipográfico
 - **PremiumCard**: lista de beneficios no-premium ahora muestra `Icons.check_circle_rounded` antes de cada feature
@@ -668,4 +677,4 @@ busbarranquilla/
 ---
 
 *Este archivo se actualiza automáticamente con cada cambio relevante al proyecto MiBus.*
-*Última actualización: 2026-03-13 (v10)*
+*Última actualización: 2026-03-13 (v11)*
