@@ -600,6 +600,10 @@ Future<void>.delayed(const Duration(milliseconds: 700), HapticFeedback.heavyImpa
 - **MapScreen durante viaje**: muestra polilínea del viaje activo + marcador de destino (bandera verde) cuando `TripActive.stops` tiene la parada destino
 - **MapPickScreen durante viaje**: muestra polilínea de la ruta activa como referencia visual
 - **Ruta del mapa (MapScreen)**: la feed route solo se muestra cuando NO hay viaje activo (`!isOnTrip`)
+- **Perfil rediseñado**: sin AppBar, hero header con `primaryDark` + avatar circular con iniciales en `accent` + chips de rol/premium/trial; tarjeta de créditos con ícono dorado y número grande; menú de navegación con `ListTile` (íconos semánticos); código de referido integrado como tile con copy button
+- **Historial de viajes rediseñado**: barra de resumen (viajes + créditos + tiempo) con fondo `primaryDark`; cards con borde izquierdo en color de ruta; fechas relativas ("Hoy", "Ayer", día de semana); créditos con ícono moneda dorado
+- **CreditHistoryTile rediseñado**: íconos semánticos por tipo de transacción (bus/viaje, reporte, regalo/bono, alerta, referido); contenedor con color de fondo suave; monto con mayor peso tipográfico
+- **PremiumCard**: lista de beneficios no-premium ahora muestra `Icons.check_circle_rounded` antes de cada feature
 
 ### Pendiente 🚧
 - Firebase push notifications (flutter_local_notifications ya instalado)
@@ -662,4 +666,4 @@ busbarranquilla/
 ---
 
 *Este archivo se actualiza automáticamente con cada cambio relevante al proyecto MiBus.*
-*Última actualización: 2026-03-13 (v8)*
+*Última actualización: 2026-03-13 (v9)*

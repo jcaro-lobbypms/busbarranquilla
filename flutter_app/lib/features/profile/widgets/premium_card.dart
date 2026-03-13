@@ -101,13 +101,17 @@ class PremiumCard extends ConsumerWidget {
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
-          for (final feature in AppStrings.premiumFeatures)
+          for (final feature in AppStrings.premiumFeatures) ...<Widget>[
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Expanded(child: Text(feature)),
+                const Icon(Icons.check_circle_rounded, color: AppColors.primary, size: 18),
+                const SizedBox(width: 8),
+                Expanded(child: Text(feature, style: const TextStyle(fontSize: 13))),
               ],
             ),
+            const SizedBox(height: 6),
+          ],
           const SizedBox(height: 12),
           AppButton.primary(
             label: AppStrings.premiumSubscribe,
