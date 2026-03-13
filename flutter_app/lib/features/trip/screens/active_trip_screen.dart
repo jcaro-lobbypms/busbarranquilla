@@ -14,6 +14,7 @@ import '../../../shared/widgets/app_snackbar.dart';
 import '../../../shared/widgets/loading_indicator.dart';
 import '../../../shared/widgets/route_polyline_layer.dart';
 import '../../map/providers/map_active_positions_provider.dart';
+import '../../planner/models/nominatim_result.dart';
 import '../../planner/providers/planner_notifier.dart';
 import '../providers/trip_notifier.dart';
 import '../providers/trip_state.dart';
@@ -104,7 +105,6 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
     final tripState = ref.read(tripNotifierProvider);
     final hasDestination =
         tripState is TripActive && tripState.trip.destinationStopId != null;
-    final routeId = tripState is TripActive ? tripState.route.id : null;
 
     showDialog<void>(
       context: context,
@@ -127,9 +127,7 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
                 notifier.activateDropoffAlerts();
               } else {
                 notifier.dismissDropoffPrompt();
-                if (routeId != null && mounted) {
-                  context.push('/trip/stop-select?routeId=$routeId&setDestination=true');
-                }
+                if (mounted) _pickDestinationOnMap(notifier);
               }
             },
             child: const Text(AppStrings.dropoffPromptAccept),
@@ -137,6 +135,25 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _pickDestinationOnMap(TripNotifier notifier) async {
+    final tripState = ref.read(tripNotifierProvider);
+    double? initLat, initLng;
+    if (tripState is TripActive) {
+      initLat = tripState.trip.currentLatitude;
+      initLng = tripState.trip.currentLongitude;
+    }
+
+    final result = await context.push<NominatimResult>(
+      '/map-pick${initLat != null ? '?lat=$initLat&lng=$initLng' : ''}',
+    );
+
+    if (!mounted || result == null) return;
+    await notifier.setDestinationByLatLng(result.lat, result.lng, result.displayName);
+    if (mounted) {
+      AppSnackbar.show(context, AppStrings.dropoffDestinationSet, SnackbarType.success);
+    }
   }
 
   void _showSuspiciousDialog() {

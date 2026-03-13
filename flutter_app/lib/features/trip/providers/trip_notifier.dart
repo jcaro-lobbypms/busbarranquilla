@@ -398,6 +398,37 @@ class TripNotifier extends Notifier<TripState> {
     _pendingDropoffDestination = null;
   }
 
+  /// Sets a destination from a map-picked lat/lng and starts dropoff monitoring.
+  /// Charges 5 credits for free users (premium/admin free).
+  Future<void> setDestinationByLatLng(double lat, double lng, String label) async {
+    if (state is! TripActive) return;
+
+    final authState = ref.read(authNotifierProvider);
+    final isPremium = authState is Authenticated &&
+        (authState.user.hasActivePremium || authState.user.role == 'admin');
+
+    if (!isPremium) {
+      final creditResult = await ref.read(creditsRepositoryProvider).spend(<String, dynamic>{
+        'amount': 5,
+        'description': 'Alertas de bajada',
+      });
+      if (creditResult is Failure) return;
+    }
+
+    if (state is! TripActive) return;
+    final active = state as TripActive;
+    final syntheticStop = Stop(
+      id: -1,
+      routeId: active.route.id,
+      name: label,
+      latitude: lat,
+      longitude: lng,
+      stopOrder: 0,
+    );
+    _startDropoffMonitor(syntheticStop, active.stops);
+    state = active.copyWith(dropoffPrompt: false);
+  }
+
   /// Sets a destination on an already-active trip and starts dropoff monitoring.
   /// Charges 5 credits (same cost as activateDropoffAlerts).
   Future<void> setDestinationStop(Stop stop) async {

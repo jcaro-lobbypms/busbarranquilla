@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 
 abstract final class AppColors {
-  static const primary = Color(0xFF2563EB);
-  static const primaryDark = Color(0xFF1E3A5F);
+  // Paleta principal — alineada con el logo MiBus
+  static const primary = Color(0xFF1A5080);        // Azul medio: botones, tabs activos, links
+  static const primaryDark = Color(0xFF0B2F52);    // Azul Real Profundo: headers, nav bar, splash
+  static const accent = Color(0xFFE7B342);         // Amarillo Mostaza: badges, bordes, detalles
+  static const critical = Color(0xFFCD1C2B);       // Rojo Vibrante: acciones críticas
+
   static const success = Color(0xFF10B981);
-  static const warning = Color(0xFFF59E0B);
-  static const error = Color(0xFFEF4444);
-  static const background = Color(0xFFF9FAFB);
+  static const warning = Color(0xFFE7B342);        // Usa el mismo amarillo del logo
+  static const error = Color(0xFFCD1C2B);          // Usa el mismo rojo del logo
+  static const background = Color(0xFFF5F7FA);     // Gris Claro Neutro
   static const surface = Color(0xFFFFFFFF);
   static const textPrimary = Color(0xFF111827);
   static const textSecondary = Color(0xFF6B7280);

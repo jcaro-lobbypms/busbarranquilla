@@ -9,8 +9,8 @@ abstract final class AppTheme {
       brightness: Brightness.light,
       primary: AppColors.primary,
       onPrimary: AppColors.surface,
-      secondary: AppColors.success,
-      onSecondary: AppColors.surface,
+      secondary: AppColors.accent,
+      onSecondary: AppColors.primaryDark,
       error: AppColors.error,
       onError: AppColors.surface,
       surface: AppColors.surface,
@@ -34,30 +34,43 @@ abstract final class AppTheme {
         bodyMedium: AppTextStyles.bodyMuted,
         labelLarge: AppTextStyles.button,
       ),
-      inputDecorationTheme: const InputDecorationTheme(
-        border: OutlineInputBorder(),
-        focusedBorder: OutlineInputBorder(
-          borderSide: BorderSide(color: AppColors.primary),
+      inputDecorationTheme: InputDecorationTheme(
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.divider),
         ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.divider),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.primary, width: 2),
+        ),
+        filled: true,
+        fillColor: AppColors.surface,
       ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: AppColors.surface,
-        indicatorColor: AppColors.primary.withValues(alpha: 0.12),
+        backgroundColor: AppColors.primaryDark,
+        indicatorColor: AppColors.accent.withValues(alpha: 0.20),
         iconTheme: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
-            return const IconThemeData(color: AppColors.primary);
+            return const IconThemeData(color: AppColors.accent);
           }
-          return const IconThemeData(color: AppColors.textSecondary);
+          return IconThemeData(color: AppColors.surface.withValues(alpha: 0.6));
         }),
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
             return const TextStyle(
-              color: AppColors.primary,
+              color: AppColors.accent,
               fontSize: 12,
               fontWeight: FontWeight.w600,
             );
           }
-          return const TextStyle(color: AppColors.textSecondary, fontSize: 12);
+          return TextStyle(
+            color: AppColors.surface.withValues(alpha: 0.6),
+            fontSize: 12,
+          );
         }),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(

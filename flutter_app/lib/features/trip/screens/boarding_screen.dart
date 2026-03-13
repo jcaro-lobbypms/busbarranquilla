@@ -7,6 +7,7 @@ import '../../../core/data/repositories/routes_repository.dart';
 import '../../../core/domain/models/bus_route.dart';
 import '../../../core/error/result.dart';
 import '../../../core/l10n/strings.dart';
+import '../../../core/theme/app_colors.dart';
 
 import '../../../shared/widgets/app_text_field.dart';
 import '../../../shared/widgets/error_view.dart';
@@ -220,8 +221,18 @@ class _NearbyRouteCard extends StatelessWidget {
         margin: const EdgeInsets.only(right: 10),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          border: Border.all(color: Theme.of(context).dividerColor),
+          color: AppColors.surface,
           borderRadius: BorderRadius.circular(10),
+          border: Border(
+            left: BorderSide(color: AppColors.forRouteCode(route.code), width: 4),
+          ),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x14000000),
+              blurRadius: 6,
+              offset: Offset(0, 2),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

@@ -190,8 +190,18 @@ class _PlannerScreenState extends ConsumerState<PlannerScreen> {
                               width: 210,
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                               decoration: BoxDecoration(
+                                color: AppColors.surface,
                                 borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: Theme.of(context).dividerColor),
+                                border: Border(
+                                  left: BorderSide(color: AppColors.forRouteCode(route.code), width: 4),
+                                ),
+                                boxShadow: const <BoxShadow>[
+                                  BoxShadow(
+                                    color: Color(0x14000000),
+                                    blurRadius: 6,
+                                    offset: Offset(0, 2),
+                                  ),
+                                ],
                               ),
                               child: Row(
                                 children: <Widget>[
@@ -299,8 +309,18 @@ class _PlannerScreenState extends ConsumerState<PlannerScreen> {
                       margin: const EdgeInsets.only(bottom: 8),
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       decoration: BoxDecoration(
-                        border: Border.all(color: Theme.of(context).dividerColor),
+                        color: AppColors.surface,
                         borderRadius: BorderRadius.circular(10),
+                        border: Border(
+                          left: BorderSide(color: AppColors.forRouteCode(route.code), width: 4),
+                        ),
+                        boxShadow: const <BoxShadow>[
+                          BoxShadow(
+                            color: Color(0x14000000),
+                            blurRadius: 6,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,

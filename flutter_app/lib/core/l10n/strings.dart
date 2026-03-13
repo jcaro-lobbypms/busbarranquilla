@@ -258,6 +258,7 @@ abstract final class AppStrings {
       'Te avisaremos cuando estés cerca de tu parada. Cuesta 5 créditos por viaje.';
   static const String dropoffPromptDecline = 'No, gracias';
   static const String dropoffPromptAccept = 'Activar (5 créditos)';
+  static const String dropoffDestinationSet = '¡Listo! Te avisaremos al acercarte a ese punto.';
 
   // Active trip bottom bar
   static const tripActiveBar = 'Viaje activo';
