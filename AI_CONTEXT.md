@@ -131,7 +131,7 @@ ShellRoute (BottomNavigationBar 4 tabs):
 1. FAB en MapScreen → `context.go('/trip/boarding')`
 2. `BoardingScreen` — lista de rutas + cercanas (300m) → tap → `RoutePreviewSheet` (mapa 340px con geometría)
 3. Confirmar en sheet → `context.push('/trip/confirm?routeId=X')`
-4. `BoardingConfirmScreen` — mapa interactivo 280px + selector de parada de destino + opción map-pick
+4. `BoardingConfirmScreen` — mapa full-screen (como ActiveTripScreen) con 3 marcadores + leyenda flotante
 5. "Me monté" → `tripNotifier.startTrip(routeId, destinationStopId?)` → `TripActive` → `context.go('/trip')`
 
 ### 2. Flujo de viaje activo (4 monitores en background)
@@ -141,6 +141,18 @@ ShellRoute (BottomNavigationBar 4 tabs):
 | Detección desvío | 30s | Fuera de ruta >250m por ≥90s | Banner: reportar / bajarse / ignorar 5min |
 | Inactividad | 60s | Sin movimiento <50m por ≥600s | Modal "¿Sigues en el bus?" — auto-cierre 120s |
 | Alerta bajada | 15s | Destino fijado | Prepararse (400m) → Bájate ya (200m + vibración) → Perdiste |
+
+**Posición del bus en tiempo real:**
+- El GPS stream (`backgroundPositionStream`) dispara en cada movimiento (distanceFilter: 10m).
+- `trip.currentLatitude/currentLongitude` se actualiza en **cada fix GPS** para que el icono se mueva en tiempo real.
+- Las llamadas al backend y socket se siguen throttleando a ~30s para no sobrecargar el servidor.
+- `MapScreen` y `ActiveTripScreen` usan `tripState.trip.currentLatitude/currentLongitude` como fuente de posición (no el socket).
+
+**Prompt de alertas de bajada para usuarios free:**
+- Al iniciar el viaje, si el usuario es free (no premium/admin), `_startMonitors()` muestra `dropoffPrompt: true` **siempre**, haya o no parada de destino pre-seleccionada.
+- Si hay destino pre-seleccionado: al aceptar → `activateDropoffAlerts()` cobra 5 créditos y arranca el monitor.
+- Si NO hay destino: al aceptar → navega a `/trip/stop-select?routeId=X&setDestination=true` → usuario elige parada → `setDestinationStop(stop)` cobra 5 créditos y arranca el monitor.
+- `StopSelectScreen` tiene parámetro `setDestination: bool` — cuando es `true`, llama `setDestinationStop()` y hace pop, en vez de iniciar un viaje nuevo.
 
 ### 3. Planificador de viaje
 1. `PlannerScreen` — auto-setea origen a GPS al cargar
@@ -337,8 +349,8 @@ El viaje transmite GPS aunque la app esté minimizada, pantalla bloqueada o en s
 ```
 
 ### Flutter — Tiles de mapa por contexto
-- `AppStrings.osmTileUrl` — CartoCDN `light_all` (gris, minimalista) → usado en MapScreen y PlannerScreen
-- `AppStrings.tripTileUrl` — CartoCDN `rastertiles/voyager` (colorido, muestra nombres de calles, POIs, parques, edificios) → usado SOLO en ActiveTripScreen para navegación
+- `AppStrings.tripTileUrl` — CartoCDN `rastertiles/voyager` (colorido, muestra nombres de calles, POIs, parques, edificios) → usado en **TODOS** los mapas de la app (MapScreen, PlannerScreen, ActiveTripScreen, BoardingConfirmScreen, RoutePreviewSheet, MapPickScreen)
+- Todos los `TileLayer` usan `keepBuffer: 3, panBuffer: 1` para evitar tiles en blanco al hacer scroll
 
 ### Flutter — ActiveTripScreen: layout full-screen
 El mapa ocupa toda la pantalla (`Stack` sin `AppBar`). Controles como overlays:
@@ -349,6 +361,76 @@ El mapa ocupa toda la pantalla (`Stack` sin `AppBar`). Controles como overlays:
 - `MapController` sigue automáticamente la posición GPS en cada update (`_followUser`)
 - Zoom inicial: **17** (nivel de calle, muestra el entorno inmediato)
 - Bus icon: 44px con sombra azul pulsante, borde blanco
+
+### Flutter — BoardingConfirmScreen: layout full-screen con 3 marcadores
+El mapa ocupa toda la pantalla (`Stack` sin `AppBar`). Layout pattern igual que `ActiveTripScreen`:
+- **Top overlay**: tarjeta con nombre de ruta + botón back
+- **Leyenda flotante** (bottom-left, encima del panel inferior): explica los 3 marcadores:
+  - 🟢 Verde (`AppColors.success`) — tu posición GPS (donde abordas)
+  - 🔴 Rojo (`AppColors.error`) — parada de bajada (donde te deja el bus, icono bus)
+  - 🟣 Morado profundo (`Colors.deepPurple`) — destino final escrito (icono bandera)
+- **Panel inferior**: selector de parada de bajada + botón "Me monté"
+- **Lista de paradas**: `DraggableScrollableSheet` como modal bottom sheet
+- **3 marcadores distintos** en el mapa con `CameraFit.bounds` ajustando todos los puntos
+- `destLat/destLng` en la URL = destino real escrito por el usuario (NO la parada de abordaje)
+- La parada más cercana al DESTINO se auto-selecciona como parada de bajada
+- **Bug fix planner**: `planner_screen.dart` pasa `selectedDest` coords (NO `result.nearestStop`) al navegar a `/trip/confirm`
+
+### Flutter — MapScreen: GPS en tiempo real con auto-follow
+- `MapController _mapController` + `StreamSubscription<Position>` para stream GPS (distanceFilter: 10m)
+- `_livePosition` se actualiza en cada fix → mapa sigue automáticamente si `_followUser = true`
+- `onPositionChanged(hasGesture)` → si el usuario hace pan manual → `_followUser = false`
+- Botón re-centrar (FAB pequeño, bottom-right) reaparece al hacer pan manual → re-activa auto-follow
+- Zoom inicial: **15**, tiles: `tripTileUrl` (Voyager colorido)
+- Prioridad de posición: `_livePosition > ready.userPosition`
+- Durante viaje: `tripPosition > _livePosition > ready.userPosition`
+
+### Flutter — Planner: marcadores en mapa se limpian al cerrar el viaje
+Al cerrar el resumen del viaje (`TripSummarySheet.onClose`), `ActiveTripScreen` llama:
+```dart
+ref.read(plannerNotifierProvider.notifier).reset(); // limpia markers origen/destino
+ref.read(mapActivePositionsProvider.notifier).state = const <LatLng>[]; // limpia buses activos
+```
+
+### Flutter — Tabs de navegación (3 tabs, sin "Mi viaje")
+`MainShell` tiene 3 tabs: Mapa (`/map`), Mis Rutas (`/planner`), Perfil (`/profile`).
+La tab "Mi viaje" NO existe. Durante viaje activo se muestra `_TripActiveBar` en lugar del `BottomNavigationBar`.
+
+### Flutter — Alerta de bajada: bugs corregidos
+
+**Bug 1 (crítico): el prompt nunca aparecía**
+`ref.listen` solo captura *cambios* de estado. `startTrip()` fija `dropoffPrompt: true` antes de que
+`ActiveTripScreen` se monte, así que el listener nunca capturaba la transición.
+**Fix:** `initState()` de `ActiveTripScreen` verifica el estado inicial en el primer frame:
+```dart
+WidgetsBinding.instance.addPostFrameCallback((_) {
+  final s = ref.read(tripNotifierProvider);
+  if (s is TripActive && s.dropoffPrompt) _showDropoffPrompt();
+});
+```
+
+**Bug 2: DropoffMonitor usaba `getCurrentPosition()` (lento/fallaba)**
+El monitor llama `_check()` cada 15s. `getCurrentPosition()` hace petición GPS fresca que puede
+tardar o fallar si el OS está en ahorro de batería.
+**Fix:** `DropoffMonitor._check()` usa `Geolocator.getLastKnownPosition()` primero (instantáneo,
+usa el cache del OS que el stream del viaje mantiene actualizado). Fallback a `getCurrentPosition()`
+solo si el cache es null.
+
+**Bug 3: sin vibración notable**
+`HapticFeedback.vibrate()` daba un toque suave imperceptible.
+**Fix:** Al disparar `onAlight`, se ejecutan 3 `HapticFeedback.heavyImpact()` separados por 350ms.
+
+**Flujo completo de alertas de bajada (usuarios free):**
+1. `startTrip()` finaliza → `_startMonitors()` fija `dropoffPrompt: true` (con o sin destino)
+2. `ActiveTripScreen.initState` detecta el prompt → muestra `AlertDialog`
+3. Usuario acepta:
+   - Con destino pre-seleccionado → `activateDropoffAlerts()` cobra 5 cr, arranca `DropoffMonitor`
+   - Sin destino → navega a `/trip/stop-select?routeId=X&setDestination=true` → usuario elige parada
+     → `setDestinationStop(stop)` cobra 5 cr, arranca `DropoffMonitor`
+4. `DropoffMonitor` verifica posición cada 15s:
+   - ≤400 m → banner amarillo "Prepárate para bajar"
+   - ≤200 m → banner rojo "¡Bájate ya!" + 3 vibraciones fuertes
+   - Pasó la parada → banner "Perdiste la parada"
 
 ### Flutter — Durante viaje activo: solo un icono de bus (el del usuario)
 
@@ -472,4 +554,4 @@ busbarranquilla/
 ---
 
 *Este archivo se actualiza automáticamente con cada cambio relevante al proyecto MiBus.*
-*Última actualización: 2026-03-12*
+*Última actualización: 2026-03-13 (v4)*

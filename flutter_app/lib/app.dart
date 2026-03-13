@@ -107,7 +107,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               body: Center(child: Text(AppStrings.tripStartError)),
             );
           }
-          return StopSelectScreen(routeId: routeId);
+          final setDestination =
+              state.uri.queryParameters['setDestination'] == 'true';
+          return StopSelectScreen(routeId: routeId, setDestination: setDestination);
         },
       ),
       GoRoute(

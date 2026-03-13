@@ -18,12 +18,12 @@ class MainShell extends ConsumerStatefulWidget {
 }
 
 class _MainShellState extends ConsumerState<MainShell> {
-  static const _tabs = <String>['/map', '/planner', '/trip', '/profile'];
+  // 3 tabs when no active trip — /trip tab only shows as _TripActiveBar.
+  static const _tabs = <String>['/map', '/planner', '/profile'];
 
   int _indexFromLocation(String location) {
     if (location.startsWith('/planner')) return 1;
-    if (location.startsWith('/trip')) return 2;
-    if (location.startsWith('/profile')) return 3;
+    if (location.startsWith('/profile')) return 2;
     return 0;
   }
 
@@ -81,11 +81,6 @@ class _MainShellState extends ConsumerState<MainShell> {
                   icon: Icon(Icons.alt_route_outlined),
                   selectedIcon: Icon(Icons.alt_route),
                   label: AppStrings.tabRoutes,
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.directions_bus_outlined),
-                  selectedIcon: Icon(Icons.directions_bus),
-                  label: AppStrings.tabTrip,
                 ),
                 NavigationDestination(
                   icon: Icon(Icons.person_outline),

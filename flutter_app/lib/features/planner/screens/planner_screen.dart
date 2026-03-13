@@ -384,10 +384,18 @@ class _PlannerScreenState extends ConsumerState<PlannerScreen> {
                               result: result,
                               onSelect: () {
                                 unawaited(_updateActivePositions(result.id));
+                                // Pass the user's actual typed destination, not the
+                                // boarding stop (nearestStop). BoardingConfirmScreen
+                                // uses these coords to pre-select the nearest dropoff
+                                // stop and show the final destination pin on the map.
+                                final dest = ref
+                                    .read(plannerNotifierProvider.notifier)
+                                    .selectedDest;
+                                final destParam = dest != null
+                                    ? '&destLat=${dest.lat}&destLng=${dest.lng}'
+                                    : '';
                                 context.push(
-                                  '/trip/confirm?routeId=${result.id}'
-                                  '&destLat=${result.nearestStop.latitude}'
-                                  '&destLng=${result.nearestStop.longitude}',
+                                  '/trip/confirm?routeId=${result.id}$destParam',
                                 );
                               },
                             );

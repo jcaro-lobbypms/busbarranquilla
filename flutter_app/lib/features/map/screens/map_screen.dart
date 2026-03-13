@@ -1,12 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/l10n/strings.dart';
 import '../../../core/socket/socket_service.dart';
 import '../../../core/storage/secure_storage.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/loading_indicator.dart';
 import '../../../shared/widgets/route_polyline_layer.dart';
@@ -30,6 +34,11 @@ class MapScreen extends ConsumerStatefulWidget {
 }
 
 class _MapScreenState extends ConsumerState<MapScreen> {
+  final MapController _mapController = MapController();
+  StreamSubscription<Position>? _positionSubscription;
+  LatLng? _livePosition;
+  bool _followUser = true;
+
   @override
   void initState() {
     super.initState();
@@ -41,7 +50,33 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       }
 
       await ref.read(mapNotifierProvider.notifier).initialize();
+      if (mounted) _startPositionStream();
     });
+  }
+
+  void _startPositionStream() {
+    _positionSubscription = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      ),
+    ).listen((pos) {
+      if (!mounted) return;
+      final newPos = LatLng(pos.latitude, pos.longitude);
+      setState(() => _livePosition = newPos);
+      if (_followUser) {
+        try {
+          _mapController.move(newPos, _mapController.camera.zoom);
+        } catch (_) {}
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _positionSubscription?.cancel();
+    _mapController.dispose();
+    super.dispose();
   }
 
   @override
@@ -63,21 +98,24 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final selectedRoute = ref.watch(selectedFeedRouteProvider);
     final tripState = ref.watch(tripNotifierProvider);
     final isOnTrip = tripState is TripActive;
-    final center = ready.userPosition ?? const LatLng(10.9685, -74.7813);
 
-    // When on a trip, use the socket-updated position from the buses list
-    // (ready.userPosition is only set at init and goes stale).
+    // Live GPS position takes priority; fallback to map state for initial render.
+    final center = _livePosition ?? ready.userPosition ?? const LatLng(10.9685, -74.7813);
+
+    // When on a trip, use the trip state position (updated on every GPS fix).
     // Also filter own trip from BusMarkerLayer to avoid duplicate icon.
     int? ownTripId;
-    LatLng? liveUserPosition;
+    LatLng? tripPosition;
     if (tripState is TripActive) {
       ownTripId = tripState.trip.id;
-      final ownBus = ready.buses.where((b) => b.id == ownTripId).firstOrNull;
-      if (ownBus?.currentLatitude != null && ownBus?.currentLongitude != null) {
-        liveUserPosition = LatLng(ownBus!.currentLatitude!, ownBus.currentLongitude!);
+      final lat = tripState.trip.currentLatitude;
+      final lng = tripState.trip.currentLongitude;
+      if (lat != null && lng != null) {
+        tripPosition = LatLng(lat, lng);
       }
     }
-    final userMarkerPosition = liveUserPosition ?? ready.userPosition;
+    // For the user marker: trip position > live GPS > map state position.
+    final userMarkerPosition = tripPosition ?? _livePosition ?? ready.userPosition;
     final otherBuses = ownTripId != null
         ? ready.buses.where((b) => b.id != ownTripId).toList(growable: false)
         : ready.buses;
@@ -86,15 +124,24 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       body: Stack(
         children: <Widget>[
           FlutterMap(
+            mapController: _mapController,
             options: MapOptions(
               initialCenter: center,
-              initialZoom: 13,
+              initialZoom: 15,
+              // Detect manual pan — disable auto-follow so the map stops chasing GPS.
+              onPositionChanged: (_, hasGesture) {
+                if (hasGesture && _followUser) {
+                  setState(() => _followUser = false);
+                }
+              },
             ),
             children: <Widget>[
               TileLayer(
-                urlTemplate: AppStrings.osmTileUrl,
+                urlTemplate: AppStrings.tripTileUrl,
                 subdomains: AppStrings.osmTileSubdomains,
                 userAgentPackageName: AppStrings.osmUserAgent,
+                keepBuffer: 3,
+                panBuffer: 1,
               ),
               if (selectedRoute != null && selectedRoute.geometry.isNotEmpty)
                 RoutePolylineLayer(points: selectedRoute.geometry),
@@ -131,6 +178,25 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               ),
             ],
           ),
+
+          // Re-center button — appears after manual pan, re-enables auto-follow.
+          if (!_followUser && _livePosition != null)
+            Positioned(
+              right: 12,
+              bottom: 90,
+              child: FloatingActionButton.small(
+                heroTag: 'recenter_map',
+                backgroundColor: Colors.white,
+                onPressed: () {
+                  setState(() => _followUser = true);
+                  try {
+                    _mapController.move(_livePosition!, _mapController.camera.zoom);
+                  } catch (_) {}
+                },
+                child: const Icon(Icons.my_location, color: AppColors.primary),
+              ),
+            ),
+
           Positioned(
             left: 0,
             right: 0,

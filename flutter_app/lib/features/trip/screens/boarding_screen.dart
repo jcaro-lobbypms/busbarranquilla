@@ -7,8 +7,7 @@ import '../../../core/data/repositories/routes_repository.dart';
 import '../../../core/domain/models/bus_route.dart';
 import '../../../core/error/result.dart';
 import '../../../core/l10n/strings.dart';
-import '../../map/providers/map_provider.dart';
-import '../../map/providers/map_state.dart';
+
 import '../../../shared/widgets/app_text_field.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/loading_indicator.dart';
@@ -49,37 +48,29 @@ class _BoardingScreenState extends ConsumerState<BoardingScreen> {
       _error = null;
     });
 
-    // 1. Reuse position already obtained by MapScreen (zero cost).
-    // 2. Fall back to last known position from OS cache (instant).
-    // 3. Last resort: fresh fix with medium accuracy + 5s timeout.
+    // Always get a fresh GPS fix so nearby routes match the user's real
+    // current location, not a stale position from when the app was opened.
     double? lat;
     double? lng;
 
-    final mapState = ref.read(mapNotifierProvider);
-    if (mapState is MapReady && mapState.userPosition != null) {
-      lat = mapState.userPosition!.latitude;
-      lng = mapState.userPosition!.longitude;
-    } else {
-      final cached = await Geolocator.getLastKnownPosition();
-      if (cached != null) {
-        lat = cached.latitude;
-        lng = cached.longitude;
-      } else {
-        final permitted = await Geolocator.checkPermission();
-        if (permitted == LocationPermission.whileInUse ||
-            permitted == LocationPermission.always) {
-          try {
-            final fresh = await Geolocator.getCurrentPosition(
-              locationSettings: const LocationSettings(
-                accuracy: LocationAccuracy.medium,
-                timeLimit: Duration(seconds: 5),
-              ),
-            );
-            lat = fresh.latitude;
-            lng = fresh.longitude;
-          } catch (_) {
-            // proceed without position
-          }
+    final permitted = await Geolocator.checkPermission();
+    if (permitted == LocationPermission.whileInUse ||
+        permitted == LocationPermission.always) {
+      try {
+        final fresh = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 6),
+          ),
+        );
+        lat = fresh.latitude;
+        lng = fresh.longitude;
+      } catch (_) {
+        // Timeout or error — fall back to last known position.
+        final cached = await Geolocator.getLastKnownPosition();
+        if (cached != null) {
+          lat = cached.latitude;
+          lng = cached.longitude;
         }
       }
     }

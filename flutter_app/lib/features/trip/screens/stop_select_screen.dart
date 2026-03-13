@@ -16,8 +16,13 @@ import '../providers/trip_state.dart';
 class StopSelectScreen extends ConsumerStatefulWidget {
   final int routeId;
 
+  /// When true, the trip is already active — selecting a stop sets the
+  /// destination and activates dropoff alerts instead of starting a new trip.
+  final bool setDestination;
+
   const StopSelectScreen({
     required this.routeId,
+    this.setDestination = false,
     super.key,
   });
 
@@ -58,22 +63,29 @@ class _StopSelectScreenState extends ConsumerState<StopSelectScreen> {
     }
   }
 
-  Future<void> _startTrip() async {
-    await ref.read(tripNotifierProvider.notifier).startTrip(
-          widget.routeId,
-          destinationStopId: _selectedStopId,
-        );
-
-    final current = ref.read(tripNotifierProvider);
-    if (current is TripActive) {
-      if (mounted) context.go('/trip');
+  Future<void> _confirm() async {
+    if (widget.setDestination) {
+      // Trip is already active — find the selected stop and set it as destination.
+      if (_selectedStopId == null) return;
+      final stop = _stops.firstWhere((s) => s.id == _selectedStopId);
+      await ref.read(tripNotifierProvider.notifier).setDestinationStop(stop);
+      if (mounted) context.pop();
+    } else {
+      await ref.read(tripNotifierProvider.notifier).startTrip(
+            widget.routeId,
+            destinationStopId: _selectedStopId,
+          );
+      final current = ref.read(tripNotifierProvider);
+      if (current is TripActive) {
+        if (mounted) context.go('/trip');
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final tripState = ref.watch(tripNotifierProvider);
-    final isLoadingTrip = tripState is TripLoading;
+    final isLoadingTrip = !widget.setDestination && tripState is TripLoading;
 
     if (_loading) {
       return const Scaffold(body: LoadingIndicator());
@@ -115,9 +127,11 @@ class _StopSelectScreenState extends ConsumerState<StopSelectScreen> {
               ),
               const SizedBox(height: 8),
               AppButton.primary(
-                label: AppStrings.tripStartButton,
+                label: widget.setDestination
+                    ? AppStrings.confirmButton
+                    : AppStrings.tripStartButton,
                 isLoading: isLoadingTrip,
-                onPressed: isLoadingTrip ? null : _startTrip,
+                onPressed: isLoadingTrip ? null : _confirm,
               ),
             ],
           ),

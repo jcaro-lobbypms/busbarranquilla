@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../../../core/domain/models/stop.dart';
 import '../../../core/location/location_service.dart';
@@ -32,7 +33,10 @@ class DropoffMonitor {
   }
 
   Future<void> _check() async {
-    final pos = await LocationService.getCurrentPosition();
+    // Use last known position (instant, no GPS request) since the trip's
+    // location stream already keeps the OS GPS cache fresh.
+    final pos = await Geolocator.getLastKnownPosition() ??
+        await LocationService.getCurrentPosition();
     if (pos == null) return;
 
     final dist = _routeDistanceMeters(pos.latitude, pos.longitude);

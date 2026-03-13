@@ -13,6 +13,8 @@ import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_snackbar.dart';
 import '../../../shared/widgets/loading_indicator.dart';
 import '../../../shared/widgets/route_polyline_layer.dart';
+import '../../map/providers/map_active_positions_provider.dart';
+import '../../planner/providers/planner_notifier.dart';
 import '../providers/trip_notifier.dart';
 import '../providers/trip_state.dart';
 import '../widgets/report_create_sheet.dart';
@@ -41,6 +43,13 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
       ref.read(tripNotifierProvider.notifier).setReportResolvedCallback((msg) {
         if (mounted) AppSnackbar.show(context, msg, SnackbarType.info);
       });
+      // The dropoff prompt may already be true when this screen first mounts
+      // (state was set before navigation — ref.listen misses that transition).
+      // Check it once here to ensure the dialog always appears.
+      final s = ref.read(tripNotifierProvider);
+      if (s is TripActive && s.dropoffPrompt) {
+        _showDropoffPrompt();
+      }
     });
   }
 
@@ -90,6 +99,11 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
 
   void _showDropoffPrompt() {
     final notifier = ref.read(tripNotifierProvider.notifier);
+    final tripState = ref.read(tripNotifierProvider);
+    final hasDestination =
+        tripState is TripActive && tripState.trip.destinationStopId != null;
+    final routeId = tripState is TripActive ? tripState.route.id : null;
+
     showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -107,7 +121,14 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
           FilledButton(
             onPressed: () {
               Navigator.of(ctx).pop();
-              notifier.activateDropoffAlerts();
+              if (hasDestination) {
+                notifier.activateDropoffAlerts();
+              } else {
+                notifier.dismissDropoffPrompt();
+                if (routeId != null && mounted) {
+                  context.push('/trip/stop-select?routeId=$routeId&setDestination=true');
+                }
+              }
             },
             child: const Text(AppStrings.dropoffPromptAccept),
           ),
@@ -236,6 +257,9 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
               completionBonusEarned: state.completionBonusEarned,
               onClose: () {
                 ref.read(tripNotifierProvider.notifier).resetToIdle();
+                // Clear planner markers (origin/dest pins) from the map.
+                ref.read(plannerNotifierProvider.notifier).reset();
+                ref.read(mapActivePositionsProvider.notifier).state = const <LatLng>[];
                 if (mounted) context.go('/map');
               },
             ),
@@ -295,6 +319,8 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
                 urlTemplate: AppStrings.tripTileUrl,
                 subdomains: AppStrings.osmTileSubdomains,
                 userAgentPackageName: AppStrings.osmUserAgent,
+                keepBuffer: 3,
+                panBuffer: 1,
               ),
               if (active.route.geometry.isNotEmpty)
                 RoutePolylineLayer(

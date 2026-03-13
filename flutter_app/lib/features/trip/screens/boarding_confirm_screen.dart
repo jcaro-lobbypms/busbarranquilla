@@ -17,8 +17,6 @@ import '../../../core/error/result.dart';
 import '../../../core/l10n/strings.dart';
 import '../../../core/location/location_service.dart';
 import '../../../core/socket/socket_service.dart';
-import '../../map/providers/map_provider.dart';
-import '../../map/providers/map_state.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_snackbar.dart';
@@ -26,6 +24,8 @@ import '../../../shared/widgets/loading_indicator.dart';
 import '../../../shared/widgets/route_activity_badge.dart';
 import '../../../shared/widgets/route_code_badge.dart';
 import '../../../shared/widgets/route_polyline_layer.dart';
+import '../../map/providers/map_provider.dart';
+import '../../map/providers/map_state.dart';
 import '../../planner/models/nominatim_result.dart';
 import '../providers/trip_notifier.dart';
 import '../providers/trip_state.dart';
@@ -48,16 +48,23 @@ class BoardingConfirmScreen extends ConsumerStatefulWidget {
 }
 
 class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
+  final MapController _mapController = MapController();
+
   bool _loading = true;
   String? _error;
   BusRoute? _route;
   List<Stop> _stops = const <Stop>[];
   int? _selectedStopId;
-  bool _showStopList = false;
   List<Report> _reports = const <Report>[];
   LatLng? _userPosition;
   int? _boardingDistanceWarning;
   bool _distanceDialogPending = false;
+  bool _reportsExpanded = false;
+
+  LatLng? get _finalDest =>
+      widget.destLat != null && widget.destLng != null
+          ? LatLng(widget.destLat!, widget.destLng!)
+          : null;
 
   @override
   void initState() {
@@ -74,6 +81,7 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
 
   @override
   void dispose() {
+    _mapController.dispose();
     ref.read(socketServiceProvider).leaveRoute(widget.routeId);
     ref.read(socketServiceProvider).off('route:report_resolved');
     ref.read(socketServiceProvider).off('route:new_report');
@@ -102,10 +110,7 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
   }
 
   Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    setState(() { _loading = true; _error = null; });
 
     final results = await Future.wait<dynamic>(<Future<dynamic>>[
       ref.read(routesRepositoryProvider).getById(widget.routeId),
@@ -118,32 +123,24 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
     final reportsResult = results[2] as Result<List<Report>>;
 
     if (routeResult is Failure<BusRoute>) {
-      setState(() {
-        _error = routeResult.error.message;
-        _loading = false;
-      });
+      setState(() { _error = routeResult.error.message; _loading = false; });
       return;
     }
 
     final route = (routeResult as Success<BusRoute>).data;
     final stops = stopsResult is Success<List<Stop>> ? stopsResult.data : const <Stop>[];
 
-    // Auto-select nearest stop when destination coordinates are provided
+    // Auto-select nearest stop to the typed destination (not the boarding stop).
     int? autoSelected;
     if (widget.destLat != null && widget.destLng != null && stops.isNotEmpty) {
       Stop? nearest;
       double bestDist = double.infinity;
       for (final stop in stops) {
         final d = LocationService.distanceMeters(
-          stop.latitude,
-          stop.longitude,
-          widget.destLat!,
-          widget.destLng!,
+          stop.latitude, stop.longitude,
+          widget.destLat!, widget.destLng!,
         );
-        if (d < bestDist) {
-          bestDist = d;
-          nearest = stop;
-        }
+        if (d < bestDist) { bestDist = d; nearest = stop; }
       }
       autoSelected = nearest?.id;
     }
@@ -159,7 +156,7 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
       _loading = false;
     });
 
-    // Read position instantly from map state — no GPS call needed.
+    // Read GPS from map state (refreshed every 30s).
     final mapState = ref.read(mapNotifierProvider);
     if (mapState is MapReady && mapState.userPosition != null && mounted) {
       setState(() => _userPosition = mapState.userPosition);
@@ -187,10 +184,7 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
             child: const Text(AppStrings.cancel),
           ),
           FilledButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              Geolocator.openLocationSettings();
-            },
+            onPressed: () { Navigator.of(ctx).pop(); Geolocator.openLocationSettings(); },
             child: const Text(AppStrings.gpsRequiredOpenSettings),
           ),
         ],
@@ -199,18 +193,12 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
   }
 
   Future<void> _confirm({bool force = false}) async {
-    // GPS service must be enabled before starting a trip.
     final gpsEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!gpsEnabled) {
-      await _showGpsRequiredDialog();
-      return;
-    }
+    if (!gpsEnabled) { await _showGpsRequiredDialog(); return; }
 
     if (!force && _userPosition != null && _route != null) {
       final dist = _minDistToGeometry(
-        _userPosition!.latitude,
-        _userPosition!.longitude,
-        _route!.geometry,
+        _userPosition!.latitude, _userPosition!.longitude, _route!.geometry,
       );
       if (dist != null && dist > 800) {
         setState(() => _boardingDistanceWarning = dist.round());
@@ -219,7 +207,6 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
     }
 
     setState(() => _boardingDistanceWarning = null);
-
     await ref.read(tripNotifierProvider.notifier).startTrip(
       widget.routeId,
       destinationStopId: _selectedStopId,
@@ -243,18 +230,11 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
         content: Text('${AppStrings.boardingDistanceBody} $dist m.'),
         actions: <Widget>[
           TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              setState(() => _boardingDistanceWarning = null);
-            },
+            onPressed: () { Navigator.of(ctx).pop(); setState(() => _boardingDistanceWarning = null); },
             child: const Text(AppStrings.cancel),
           ),
           FilledButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              setState(() => _boardingDistanceWarning = null);
-              _confirm(force: true);
-            },
+            onPressed: () { Navigator.of(ctx).pop(); setState(() => _boardingDistanceWarning = null); _confirm(force: true); },
             child: const Text(AppStrings.boardingDistanceConfirm),
           ),
         ],
@@ -262,11 +242,101 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
     );
   }
 
-  static double? _minDistToGeometry(
-    double userLat,
-    double userLng,
-    List<LatLng> geometry,
-  ) {
+  void _showStopListModal() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: 0.85,
+        expand: false,
+        builder: (ctx, scroll) => Column(
+          children: <Widget>[
+            const SizedBox(height: 12),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                AppStrings.tripSelectStopOptional,
+                style: Theme.of(ctx).textTheme.titleSmall,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: _stops.isEmpty
+                  ? const Center(child: Text(AppStrings.tripNoStops))
+                  : ListView.builder(
+                      controller: scroll,
+                      itemCount: _stops.length,
+                      itemBuilder: (_, index) {
+                        final stop = _stops[index];
+                        final selected = stop.id == _selectedStopId;
+                        return ListTile(
+                          onTap: () {
+                            setState(() => _selectedStopId = selected ? null : stop.id);
+                            Navigator.of(ctx).pop();
+                          },
+                          leading: Icon(
+                            selected ? Icons.check_circle : Icons.radio_button_unchecked,
+                            color: selected ? AppColors.primary : null,
+                          ),
+                          title: Text(stop.name),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Map helpers ──────────────────────────────────────────────────────────────
+
+  MapOptions _buildMapOptions() {
+    final List<LatLng> points = <LatLng>[
+      if (_userPosition != null) _userPosition!,
+      if (_finalDest != null) _finalDest!,
+      if (_selectedStop != null) LatLng(_selectedStop!.latitude, _selectedStop!.longitude),
+      if (_route?.geometry.isNotEmpty ?? false) ...<LatLng>[
+        _route!.geometry.first,
+        _route!.geometry[_route!.geometry.length ~/ 2],
+        _route!.geometry.last,
+      ],
+    ];
+
+    if (points.length >= 2) {
+      return MapOptions(
+        initialCameraFit: CameraFit.bounds(
+          bounds: LatLngBounds.fromPoints(points),
+          padding: const EdgeInsets.fromLTRB(40, 100, 40, 220),
+        ),
+        interactionOptions: const InteractionOptions(
+          flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
+        ),
+      );
+    }
+    return MapOptions(
+      initialCenter: _userPosition ?? const LatLng(10.9685, -74.7813),
+      initialZoom: 15,
+      interactionOptions: const InteractionOptions(
+        flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
+      ),
+    );
+  }
+
+  static double? _minDistToGeometry(double userLat, double userLng, List<LatLng> geometry) {
     if (geometry.length < 2) return null;
     double minDist = double.infinity;
     for (int i = 0; i < geometry.length - 1; i++) {
@@ -288,26 +358,19 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
     final dx = bLat - aLat;
     final dy = bLng - aLng;
     final lenSq = dx * dx + dy * dy;
-    if (lenSq == 0) {
-      return LocationService.distanceMeters(pLat, pLng, aLat, aLng);
-    }
-    final t = math.max(
-      0.0,
-      math.min(1.0, ((pLat - aLat) * dx + (pLng - aLng) * dy) / lenSq),
-    );
-    return LocationService.distanceMeters(
-      pLat, pLng, aLat + t * dx, aLng + t * dy,
-    );
+    if (lenSq == 0) return LocationService.distanceMeters(pLat, pLng, aLat, aLng);
+    final t = math.max(0.0, math.min(1.0, ((pLat - aLat) * dx + (pLng - aLng) * dy) / lenSq));
+    return LocationService.distanceMeters(pLat, pLng, aLat + t * dx, aLng + t * dy);
   }
+
+  // ── Build ────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final tripState = ref.watch(tripNotifierProvider);
     final isLoadingTrip = tripState is TripLoading;
 
-    if (_loading) {
-      return const Scaffold(body: LoadingIndicator());
-    }
+    if (_loading) return const Scaffold(body: LoadingIndicator());
 
     if (_error != null || _route == null) {
       return Scaffold(
@@ -315,10 +378,6 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
         body: Center(child: Text(_error ?? AppStrings.errorUnknown)),
       );
     }
-
-    final route = _route!;
-    final company = route.companyName ?? route.company ?? '';
-    final selectedStop = _selectedStop;
 
     if (_boardingDistanceWarning != null && !_distanceDialogPending) {
       _distanceDialogPending = true;
@@ -328,179 +387,330 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
       });
     }
 
+    final route = _route!;
+    final company = route.companyName ?? route.company ?? '';
+    final selectedStop = _selectedStop;
+    final finalDest = _finalDest;
+    final topPadding = MediaQuery.of(context).padding.top;
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+
     return Scaffold(
-      appBar: AppBar(title: const Text(AppStrings.boardingTitle)),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: Stack(
+        children: <Widget>[
+          // ── Full-screen map ─────────────────────────────────────────────────
+          FlutterMap(
+            mapController: _mapController,
+            options: _buildMapOptions(),
             children: <Widget>[
-              // Route header
-              Row(
-                children: <Widget>[
-                  RouteCodeBadge(code: route.code),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          route.name,
-                          style: Theme.of(context).textTheme.titleMedium,
+              TileLayer(
+                urlTemplate: AppStrings.tripTileUrl,
+                subdomains: AppStrings.osmTileSubdomains,
+                userAgentPackageName: AppStrings.osmUserAgent,
+                keepBuffer: 3,
+                panBuffer: 1,
+              ),
+              if (route.geometry.isNotEmpty)
+                RoutePolylineLayer(
+                  points: route.geometry,
+                  color: AppColors.primary.withValues(alpha: 0.7),
+                  strokeWidth: 5,
+                ),
+              MarkerLayer(
+                markers: <Marker>[
+                  // 🟢 Tu posición (donde abordas)
+                  if (_userPosition != null)
+                    Marker(
+                      point: _userPosition!,
+                      width: 40,
+                      height: 40,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: AppColors.success,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2.5),
+                          boxShadow: const <BoxShadow>[
+                            BoxShadow(color: Colors.black26, blurRadius: 6),
+                          ],
                         ),
-                        if (company.isNotEmpty)
-                          Text(company, style: Theme.of(context).textTheme.bodySmall),
-                        if (route.frequencyMinutes != null)
-                          Text(
-                            '${AppStrings.frequencyLabel}: ${route.frequencyMinutes} ${AppStrings.timeUnitMinutes}',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                      ],
+                        child: const Icon(Icons.my_location, color: Colors.white, size: 20),
+                      ),
                     ),
-                  ),
+                  // 🔴 Parada de bajada (donde el bus te deja)
+                  if (selectedStop != null)
+                    Marker(
+                      point: LatLng(selectedStop.latitude, selectedStop.longitude),
+                      width: 42,
+                      height: 42,
+                      child: const Icon(
+                        Icons.directions_bus,
+                        color: AppColors.error,
+                        size: 36,
+                        shadows: <Shadow>[Shadow(color: Colors.black38, blurRadius: 6)],
+                      ),
+                    ),
+                  // 🟣 Tu destino original (lo que escribiste)
+                  if (finalDest != null)
+                    Marker(
+                      point: finalDest,
+                      width: 42,
+                      height: 42,
+                      child: const Icon(
+                        Icons.flag,
+                        color: Colors.deepPurple,
+                        size: 36,
+                        shadows: <Shadow>[Shadow(color: Colors.black38, blurRadius: 6)],
+                      ),
+                    ),
                 ],
-              ),
-              const SizedBox(height: 8),
-              RouteActivityBadge(routeId: widget.routeId),
-              const SizedBox(height: 12),
-              _BoardingMapPreview(
-                geometry: route.geometry,
-                userPosition: _userPosition,
-                destinationStop: selectedStop,
-              ),
-              if (_reports.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 16),
-                const Divider(),
-                const SizedBox(height: 8),
-                Text(
-                  AppStrings.boardingReportsTitle,
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                const SizedBox(height: 6),
-                RouteReportsList(
-                  reports: _reports,
-                  onConfirm: (reportId) async {
-                    final result = await ref.read(reportsRepositoryProvider).confirm(reportId);
-                    if (result is Success<void>) {
-                      await _reloadReports();
-                    }
-                  },
-                ),
-              ],
-              const SizedBox(height: 20),
-              const Divider(),
-              const SizedBox(height: 12),
-
-              // Destination stop — compact chip when auto-selected, optional picker otherwise
-              _DropoffRow(
-                selectedStop: selectedStop,
-                onChangeTap: () => setState(() => _showStopList = !_showStopList),
-                showingList: _showStopList,
-                onPickFromMap: () async {
-                  // Center on the already-selected stop, or user position
-                  final stop = selectedStop;
-                  final String query;
-                  if (stop != null) {
-                    query = '?lat=${stop.latitude}&lng=${stop.longitude}';
-                  } else if (_userPosition != null) {
-                    query = '?lat=${_userPosition!.latitude}&lng=${_userPosition!.longitude}';
-                  } else {
-                    query = '';
-                  }
-                  final result = await context.push<NominatimResult>('/map-pick$query');
-                  if (result == null || !mounted) return;
-                  if (_stops.isEmpty) return;
-                  Stop? nearest;
-                  double bestDist = double.infinity;
-                  for (final stop in _stops) {
-                    final d = LocationService.distanceMeters(
-                      stop.latitude,
-                      stop.longitude,
-                      result.lat,
-                      result.lng,
-                    );
-                    if (d < bestDist) {
-                      bestDist = d;
-                      nearest = stop;
-                    }
-                  }
-                  if (nearest != null) {
-                    setState(() {
-                      _selectedStopId = nearest!.id;
-                      _showStopList = false;
-                    });
-                  }
-                },
-              ),
-
-              // Stop list — shown only when user taps Cambiar / Seleccionar
-              if (_showStopList) ...<Widget>[
-                const SizedBox(height: 8),
-                Expanded(
-                  child: _stops.isEmpty
-                      ? Center(
-                          child: Text(
-                            AppStrings.tripNoStops,
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        )
-                      : ListView.builder(
-                          itemCount: _stops.length,
-                          itemBuilder: (context, index) {
-                            final stop = _stops[index];
-                            final selected = stop.id == _selectedStopId;
-                            return ListTile(
-                              onTap: () => setState(() {
-                                _selectedStopId = selected ? null : stop.id;
-                                _showStopList = false;
-                              }),
-                              leading: Icon(
-                                selected
-                                    ? Icons.check_circle
-                                    : Icons.radio_button_unchecked,
-                                color: selected
-                                    ? Theme.of(context).colorScheme.primary
-                                    : null,
-                              ),
-                              title: Text(stop.name),
-                              contentPadding: EdgeInsets.zero,
-                            );
-                          },
-                        ),
-                ),
-              ] else
-                const Spacer(),
-
-              const SizedBox(height: 12),
-              AppButton.primary(
-                label: AppStrings.boardedButton,
-                isLoading: isLoadingTrip,
-                onPressed: isLoadingTrip ? null : _confirm,
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () => context.pop(),
-                child: const Text(AppStrings.tripClose),
               ),
             ],
           ),
-        ),
+
+          // ── Top: back button + route card ───────────────────────────────────
+          Positioned(
+            top: topPadding + 8,
+            left: 12,
+            right: 12,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Material(
+                  borderRadius: BorderRadius.circular(14),
+                  elevation: 4,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryDark,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      children: <Widget>[
+                        GestureDetector(
+                          onTap: () => context.pop(),
+                          child: const Icon(Icons.arrow_back, color: Colors.white, size: 20),
+                        ),
+                        const SizedBox(width: 10),
+                        RouteCodeBadge(code: route.code),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                route.name,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (company.isNotEmpty)
+                                Text(
+                                  company,
+                                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                            ],
+                          ),
+                        ),
+                        if (route.frequencyMinutes != null) ...<Widget>[
+                          const SizedBox(width: 6),
+                          Text(
+                            '${AppStrings.frequencyLabel}: ${route.frequencyMinutes} ${AppStrings.timeUnitMinutes}',
+                            style: const TextStyle(color: Colors.white70, fontSize: 11),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                RouteActivityBadge(routeId: widget.routeId),
+              ],
+            ),
+          ),
+
+          // ── Legend card ─────────────────────────────────────────────────────
+          if (_userPosition != null || selectedStop != null || finalDest != null)
+            Positioned(
+              left: 12,
+              bottom: bottomPadding + 180,
+              child: Material(
+                borderRadius: BorderRadius.circular(10),
+                elevation: 3,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.95),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      if (_userPosition != null)
+                        const _LegendItem(color: AppColors.success, label: AppStrings.boardingOriginLabel),
+                      if (selectedStop != null)
+                        const _LegendItem(color: AppColors.error, label: AppStrings.tripDropoffStop),
+                      if (finalDest != null)
+                        const _LegendItem(color: Colors.deepPurple, label: AppStrings.destLabel),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          // ── Reports collapsible ─────────────────────────────────────────────
+          if (_reports.isNotEmpty)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: bottomPadding + 155,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  GestureDetector(
+                    onTap: () => setState(() => _reportsExpanded = !_reportsExpanded),
+                    child: Container(
+                      color: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: <Widget>[
+                          Text(
+                            '${AppStrings.boardingReportsTitle} (${_reports.length})',
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                          ),
+                          Icon(
+                            _reportsExpanded ? Icons.expand_more : Icons.expand_less,
+                            size: 20,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (_reportsExpanded)
+                    Container(
+                      color: Colors.white,
+                      constraints: const BoxConstraints(maxHeight: 180),
+                      child: RouteReportsList(
+                        reports: _reports,
+                        onConfirm: (reportId) async {
+                          final result = await ref.read(reportsRepositoryProvider).confirm(reportId);
+                          if (result is Success<void>) await _reloadReports();
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ),
+
+          // ── Bottom panel: dropoff + confirm ─────────────────────────────────
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: EdgeInsets.only(
+                left: 16, right: 16, top: 14,
+                bottom: bottomPadding + 14,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.12),
+                    blurRadius: 12,
+                    offset: const Offset(0, -3),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  // Dropoff row
+                  _DropoffRow(
+                    selectedStop: selectedStop,
+                    onChangeTap: _showStopListModal,
+                    onPickFromMap: () async {
+                      final stop = selectedStop;
+                      final String query;
+                      if (stop != null) {
+                        query = '?lat=${stop.latitude}&lng=${stop.longitude}';
+                      } else if (_userPosition != null) {
+                        query = '?lat=${_userPosition!.latitude}&lng=${_userPosition!.longitude}';
+                      } else {
+                        query = '';
+                      }
+                      final result = await context.push<NominatimResult>('/map-pick$query');
+                      if (result == null || !mounted || _stops.isEmpty) return;
+                      Stop? nearest;
+                      double bestDist = double.infinity;
+                      for (final s in _stops) {
+                        final d = LocationService.distanceMeters(
+                          s.latitude, s.longitude, result.lat, result.lng,
+                        );
+                        if (d < bestDist) { bestDist = d; nearest = s; }
+                      }
+                      if (nearest != null) setState(() => _selectedStopId = nearest!.id);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  AppButton.primary(
+                    label: AppStrings.boardedButton,
+                    isLoading: isLoadingTrip,
+                    onPressed: isLoadingTrip ? null : _confirm,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
+// ── Legend item ───────────────────────────────────────────────────────────────
+
+class _LegendItem extends StatelessWidget {
+  final Color color;
+  final String label;
+
+  const _LegendItem({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Dropoff row ───────────────────────────────────────────────────────────────
+
 class _DropoffRow extends StatelessWidget {
   final Stop? selectedStop;
   final VoidCallback onChangeTap;
-  final bool showingList;
   final VoidCallback? onPickFromMap;
 
   const _DropoffRow({
     required this.selectedStop,
     required this.onChangeTap,
-    required this.showingList,
     this.onPickFromMap,
   });
 
@@ -510,7 +720,7 @@ class _DropoffRow extends StatelessWidget {
     final hasStop = selectedStop != null;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: hasStop
             ? colorScheme.primaryContainer.withValues(alpha: 0.35)
@@ -534,10 +744,9 @@ class _DropoffRow extends StatelessWidget {
               children: <Widget>[
                 Text(
                   AppStrings.tripDropoffStop,
-                  style: Theme.of(context)
-                      .textTheme
-                      .labelSmall
-                      ?.copyWith(color: Theme.of(context).textTheme.bodySmall?.color),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).textTheme.bodySmall?.color,
+                      ),
                 ),
                 Text(
                   hasStop ? selectedStop!.name : AppStrings.tripNoDropoff,
@@ -566,107 +775,9 @@ class _DropoffRow extends StatelessWidget {
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
-            child: Text(
-              showingList ? AppStrings.tripClose : AppStrings.tripChangeStop,
-            ),
+            child: const Text(AppStrings.tripChangeStop),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _BoardingMapPreview extends StatelessWidget {
-  final List<LatLng> geometry;
-  final LatLng? userPosition;
-  final Stop? destinationStop;
-
-  const _BoardingMapPreview({
-    required this.geometry,
-    this.userPosition,
-    this.destinationStop,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final List<LatLng> points = <LatLng>[
-      if (userPosition != null) userPosition!,
-      if (destinationStop != null)
-        LatLng(destinationStop!.latitude, destinationStop!.longitude),
-      ...geometry,
-    ];
-
-    final LatLng fallbackCenter = userPosition ??
-        (geometry.isNotEmpty ? geometry[geometry.length ~/ 2] : const LatLng(10.9685, -74.7813));
-
-    MapOptions buildOptions() {
-      if (points.length >= 2) {
-        return MapOptions(
-          initialCameraFit: CameraFit.bounds(
-            bounds: LatLngBounds.fromPoints(points),
-            padding: const EdgeInsets.all(40),
-          ),
-          interactionOptions: const InteractionOptions(
-            flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
-          ),
-        );
-      }
-      return MapOptions(
-        initialCenter: fallbackCenter,
-        initialZoom: 14,
-        interactionOptions: const InteractionOptions(
-          flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
-        ),
-      );
-    }
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: SizedBox(
-        height: 280,
-        child: FlutterMap(
-          options: buildOptions(),
-          children: <Widget>[
-            TileLayer(
-              urlTemplate: AppStrings.osmTileUrl,
-              subdomains: AppStrings.osmTileSubdomains,
-              userAgentPackageName: AppStrings.osmUserAgent,
-            ),
-            if (geometry.isNotEmpty) RoutePolylineLayer(points: geometry),
-            MarkerLayer(
-              markers: <Marker>[
-                if (userPosition != null)
-                  Marker(
-                    point: userPosition!,
-                    width: 32,
-                    height: 32,
-                    child: const Icon(
-                      Icons.my_location,
-                      color: AppColors.success,
-                      size: 28,
-                      shadows: <Shadow>[
-                        Shadow(color: Colors.black26, blurRadius: 4),
-                      ],
-                    ),
-                  ),
-                if (destinationStop != null)
-                  Marker(
-                    point: LatLng(destinationStop!.latitude, destinationStop!.longitude),
-                    width: 36,
-                    height: 36,
-                    child: const Icon(
-                      Icons.location_pin,
-                      color: AppColors.error,
-                      size: 32,
-                      shadows: <Shadow>[
-                        Shadow(color: Colors.black26, blurRadius: 4),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-          ],
-        ),
       ),
     );
   }

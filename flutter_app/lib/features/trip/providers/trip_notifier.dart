@@ -306,6 +306,23 @@ class TripNotifier extends Notifier<TripState> {
     _pendingDropoffDestination = null;
   }
 
+  /// Sets a destination on an already-active trip and starts dropoff monitoring.
+  /// Charges 5 credits (same cost as activateDropoffAlerts).
+  Future<void> setDestinationStop(Stop stop) async {
+    if (state is! TripActive) return;
+
+    final creditResult = await ref.read(creditsRepositoryProvider).spend(<String, dynamic>{
+      'amount': 5,
+      'description': 'Alertas de bajada',
+    });
+    if (creditResult is Failure) return;
+
+    if (state is! TripActive) return;
+    final active = state as TripActive;
+    _startDropoffMonitor(stop, active.stops);
+    state = active.copyWith(dropoffPrompt: false);
+  }
+
   void _startDropoffMonitor(Stop destination, List<Stop> allStops) {
     _dropoffMonitor?.dispose();
     _dropoffMonitor = DropoffMonitor(
@@ -318,7 +335,10 @@ class TripNotifier extends Notifier<TripState> {
       onAlight: () {
         if (state is! TripActive) return;
         state = (state as TripActive).copyWith(dropoffAlert: DropoffAlert.alight);
-        HapticFeedback.vibrate();
+        // Three heavy pulses so the user clearly feels the "get off now" alert.
+        HapticFeedback.heavyImpact();
+        Future<void>.delayed(const Duration(milliseconds: 350), HapticFeedback.heavyImpact);
+        Future<void>.delayed(const Duration(milliseconds: 700), HapticFeedback.heavyImpact);
       },
       onMissed: () {
         if (state is! TripActive) return;
@@ -429,13 +449,20 @@ class TripNotifier extends Notifier<TripState> {
 
       _lastGpsAt = DateTime.now();
 
-      // Throttle backend updates to ~30s — the stream fires on every GPS fix
-      // (distanceFilter: 10m), but we don't need to hit the server that often.
+      // Update UI position immediately on every GPS fix for smooth movement.
+      // This makes the bus icon move in real-time without waiting for the backend.
+      state = (state as TripActive).copyWith(
+        trip: (state as TripActive).trip.copyWith(
+          currentLatitude: pos.latitude,
+          currentLongitude: pos.longitude,
+        ),
+      );
+
+      // Throttle backend + socket updates to ~30s — the stream fires on every
+      // GPS fix (distanceFilter: 10m), but we don't need to hit the server that often.
       final now = DateTime.now();
       if (now.difference(_lastBroadcast).inSeconds < 28) return;
       _lastBroadcast = now;
-
-      final active = state as TripActive;
 
       final updateResult = await ref.read(tripsRepositoryProvider).updateLocation(<String, dynamic>{
         'latitude': pos.latitude,
@@ -444,10 +471,9 @@ class TripNotifier extends Notifier<TripState> {
 
       if (updateResult is Success<int> && state is TripActive) {
         ref.read(socketServiceProvider).sendLocation(pos.latitude, pos.longitude);
+        // Only update credits — lat/lng already set above.
         state = (state as TripActive).copyWith(
-          trip: active.trip.copyWith(
-            currentLatitude: pos.latitude,
-            currentLongitude: pos.longitude,
+          trip: (state as TripActive).trip.copyWith(
             creditsEarned: updateResult.data,
           ),
         );
@@ -486,6 +512,10 @@ class TripNotifier extends Notifier<TripState> {
   void _startMonitors(TripActive activeState, int? destinationStopId) {
     _disposeMonitorsOnly();
 
+    final authState = ref.read(authNotifierProvider);
+    final isPremium = authState is Authenticated &&
+        (authState.user.hasActivePremium || authState.user.role == 'admin');
+
     if (destinationStopId != null) {
       Stop? destination;
       for (final stop in activeState.stops) {
@@ -495,10 +525,6 @@ class TripNotifier extends Notifier<TripState> {
         }
       }
       if (destination != null) {
-        final authState = ref.read(authNotifierProvider);
-        final isPremium = authState is Authenticated &&
-            (authState.user.hasActivePremium || authState.user.role == 'admin');
-
         if (isPremium) {
           _startDropoffMonitor(destination, activeState.stops);
         } else {
@@ -506,6 +532,10 @@ class TripNotifier extends Notifier<TripState> {
           _pendingDropoffDestination = destination;
         }
       }
+    } else if (!isPremium) {
+      // Free users without a pre-selected destination still get the prompt
+      // so they can choose a stop and activate alerts.
+      state = (state as TripActive).copyWith(dropoffPrompt: true);
     }
 
     _inactivityMonitor = InactivityMonitor(

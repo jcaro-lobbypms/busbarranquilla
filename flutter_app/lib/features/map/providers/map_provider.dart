@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/data/repositories/reports_repository.dart';
@@ -113,12 +114,17 @@ class MapNotifier extends Notifier<MapState> {
     if (state is! MapReady) return;
 
     final current = state as MapReady;
-    final userPos = current.userPosition;
-    if (userPos == null) return;
+
+    // Refresh user position so the map marker and nearby reports stay current.
+    // getLastKnownPosition() is instant — it returns the most recent OS GPS fix.
+    final freshPos = await Geolocator.getLastKnownPosition();
+    final lat = freshPos?.latitude ?? current.userPosition?.latitude;
+    final lng = freshPos?.longitude ?? current.userPosition?.longitude;
+    if (lat == null || lng == null) return;
 
     final futures = await Future.wait<Result<dynamic>>(<Future<Result<dynamic>>>[
       ref.read(tripsRepositoryProvider).getBuses(),
-      ref.read(reportsRepositoryProvider).getNearby(lat: userPos.latitude, lng: userPos.longitude),
+      ref.read(reportsRepositoryProvider).getNearby(lat: lat, lng: lng),
       ref.read(routesRepositoryProvider).activeFeed(),
     ]);
 
@@ -130,6 +136,7 @@ class MapNotifier extends Notifier<MapState> {
         reportsResult is Success<List<Report>> &&
         feedResult is Success<List<BusRoute>>) {
       state = current.copyWith(
+        userPosition: LatLng(lat, lng),
         buses: busesResult.data,
         reports: reportsResult.data,
         activeFeedRoutes: feedResult.data,
