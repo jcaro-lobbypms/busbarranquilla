@@ -717,7 +717,7 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
                             style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                           ),
                           Icon(
-                            _reportsExpanded ? Icons.expand_more : Icons.expand_less,
+                            _reportsExpanded ? Icons.expand_less : Icons.expand_more,
                             size: 20,
                           ),
                         ],
