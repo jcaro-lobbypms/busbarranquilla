@@ -111,7 +111,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    Image.asset('assets/icon/logo.png', width: 260, height: 260),
+                    Image.asset('assets/icon/logo.png', width: 300, height: 300),
                   ],
                 ),
               ),
