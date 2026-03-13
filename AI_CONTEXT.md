@@ -577,6 +577,12 @@ Future<void>.delayed(const Duration(milliseconds: 700), HapticFeedback.heavyImpa
 - **Confirmación antes de "Me bajé"**: AlertDialog destructivo
 - **Resumen de viaje rediseñado**: pantalla completa con créditos grandes, duración, distancia, reportes creados, racha de días (cargado en paralelo con endTrip)
 - **Reporte "Ruta diferente al mapa" inteligente**: validación GPS doble (cliente + backend), re-entry timer 15s, guarda tramo desactualizado en reported_geometry
+- **Google Sign-In fix**: `serverClientId` (web OAuth client type 3) requerido para obtener `idToken` en Android; `signOut()` antes de `signIn()` para siempre mostrar picker
+- **Guardar contraseña Google (autofill)**: `AutofillGroup` + `autofillHints` en login screen; `TextInput.finishAutofillContext()` al hacer submit → activa Google Password Manager
+- **Assets visuales actualizados**: logo circular MiBus con fondo transparente en login; bus ilustración en splash center; bus en tránsito animado en splash + marcadores del mapa
+- **Paleta "Profesional Atardecer"**: primary `#1A5080`, primaryDark `#0B2F52`, accent `#E7B342`, error/critical `#CD1C2B`, background `#F5F7FA`; navigation bar azul oscuro con iconos dorados
+- **Cards con borde izquierdo de color**: "Cerca de ti", favoritos y "Buses en tu zona" → fondo blanco + sombra + borde izquierdo 4px en color de `AppColors.forRouteCode(route.code)`
+- **Alerta de bajada — selección en mapa**: cuando el usuario no tiene destino, se abre `MapPickScreen` (crosshair) en vez de lista de paradas; `setDestinationByLatLng()` crea `Stop` sintético (`id: -1`) para el monitor; premium/admin no pagan créditos
 
 ### Pendiente 🚧
 - Firebase push notifications (flutter_local_notifications ya instalado)
@@ -590,8 +596,10 @@ Future<void>.delayed(const Duration(milliseconds: 700), HapticFeedback.heavyImpa
 
 | Asset | Descripción |
 |-------|-------------|
-| `assets/icon/icon.png` | Icono de app — logo Gemini AI (1024×1024, fondo blanco) |
-| `assets/splash/bus.png` | Bus para splash screen — diseño personalizado |
+| `assets/icon/icon.png` | Icono de app (launcher) |
+| `assets/icon/logo.png` | Logo circular MiBus (500×500, fondo transparente) — usado en login screen |
+| `assets/splash/bus.png` | Bus MiBus ilustración (500×500, fondo transparente) — logo central del splash screen |
+| `assets/splash/en_transito.png` | Bus MiBus en tránsito con líneas de velocidad (500×500, fondo transparente) — bus animado en splash + marcadores de buses en el mapa |
 
 ---
 
@@ -624,7 +632,7 @@ busbarranquilla/
     │   ├── data/                    # Sources + Repositories
     │   ├── domain/models/           # Modelos inmutables
     │   ├── l10n/strings.dart        # TODOS los strings de UI
-    │   └── theme/app_colors.dart    # Paleta: primary #2563EB
+    │   └── theme/app_colors.dart    # Paleta: primary #1A5080, primaryDark #0B2F52, accent #E7B342
     └── features/
         ├── auth/                    # Login, register, splash, onboarding
         ├── map/                     # MapScreen + MapPickScreen
@@ -637,4 +645,4 @@ busbarranquilla/
 ---
 
 *Este archivo se actualiza automáticamente con cada cambio relevante al proyecto MiBus.*
-*Última actualización: 2026-03-13 (v6)*
+*Última actualización: 2026-03-13 (v7)*

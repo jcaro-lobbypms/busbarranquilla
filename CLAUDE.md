@@ -973,6 +973,12 @@ User votes that the bus route has changed or is stuck. ≥3 `ruta_real` votes tr
 - **Desvío dialog diferenciado** — separa "desvío temporal (trancón)" de "ruta diferente al mapa"; cada opción con ícono, título, descripción y acción distinta
 - **Timer y créditos más visibles** — badges con fondo (`primaryDark` semitransparente / amber) en la top bar del viaje activo
 - **Reporte ruta_real inteligente** — `TripNotifier.reportRutaReal()`: GPS `getLastKnownPosition()` → backend valida contra geometría (200m umbral) → si aceptado activa `_deviationReEntryTimer` 15s → cuando GPS re-entra < 200m → `updateDeviationReEntry` + snackbar; cancelado en `_disposeMonitorsAndTimers()`
+- **Google Sign-In fix** — `serverClientId` (web OAuth client type 3) agregado a `GoogleSignIn()`; `signOut()` antes de `signIn()` para siempre mostrar picker de cuentas
+- **Google Password Manager (autofill)** — `AutofillGroup` + `AutofillHints.email/password` en login screen; `TextInput.finishAutofillContext()` al submit → Android muestra diálogo "Guardar contraseña"; `AppTextField` recibe `autofillHints`, `textInputAction`, `onEditingComplete`
+- **Assets visuales** — `assets/icon/logo.png`: logo circular MiBus con fondo transparente (login screen); `assets/splash/bus.png`: bus ilustración para splash center; `assets/splash/en_transito.png`: bus en tránsito (splash animado + marcadores `UserMarkerLayer`/`BusMarkerLayer`/active positions)
+- **Paleta "Profesional Atardecer"** — `app_colors.dart`: `primary #1A5080`, `primaryDark #0B2F52`, `accent #E7B342`, `error #CD1C2B`, `background #F5F7FA`; `app_theme.dart`: navigation bar azul oscuro con iconos/labels dorados, input borders redondeados, focus en `primary`
+- **Cards con borde izquierdo dinámico** — "Cerca de ti" (`boarding_screen.dart`), favoritos y "Buses en tu zona" (`planner_screen.dart`): fondo blanco + sombra suave + borde izquierdo 4px en `AppColors.forRouteCode(route.code)` (misma color que el badge del código de ruta)
+- **Alerta de bajada — selección en mapa** — cuando usuario acepta sin destino: `_pickDestinationOnMap()` abre `MapPickScreen` (crosshair + reverse geocode) en vez de lista de paradas; `TripNotifier.setDestinationByLatLng(lat, lng, label)` crea `Stop` sintético `id: -1` para `DropoffMonitor`; premium/admin no pagan 5 créditos
 
 **Pending (Flutter):**
 - Firebase push notifications (flutter_local_notifications already installed)
