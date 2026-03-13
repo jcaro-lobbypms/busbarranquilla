@@ -283,15 +283,16 @@ export const getTripCurrent = async (req: Request, res: Response): Promise<void>
       `SELECT
         at.id,
         at.route_id,
+        at.destination_stop_id,
         r.name AS route_name,
         r.code AS route_code,
         at.started_at,
         at.current_latitude,
         at.current_longitude,
         at.credits_earned,
-        s.latitude AS destination_lat,
-        s.longitude AS destination_lng,
-        s.name AS destination_stop_name
+        COALESCE(s.latitude,  at.custom_destination_lat)  AS destination_lat,
+        COALESCE(s.longitude, at.custom_destination_lng)  AS destination_lng,
+        COALESCE(s.name,      at.custom_destination_name) AS destination_stop_name
        FROM active_trips at
        JOIN routes r ON r.id = at.route_id
        LEFT JOIN stops s ON s.id = at.destination_stop_id
@@ -333,6 +334,40 @@ export const getTripHistory = async (req: Request, res: Response): Promise<void>
     res.json({ trips: result.rows });
   } catch (error) {
     console.error('Error obteniendo historial de viajes:', error);
+    res.status(500).json({ message: 'Error interno del servidor' });
+  }
+};
+
+// Guardar destino personalizado (punto libre en el mapa) para que sobreviva reinicios
+export const updateTripDestination = async (req: Request, res: Response): Promise<void> => {
+  const userId = (req as any).userId as number;
+  const { latitude, longitude, name } = req.body;
+
+  if (!latitude || !longitude) {
+    res.status(400).json({ message: 'latitude y longitude son obligatorios' });
+    return;
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE active_trips
+       SET custom_destination_lat  = $1,
+           custom_destination_lng  = $2,
+           custom_destination_name = $3,
+           destination_stop_id     = NULL
+       WHERE user_id = $4 AND is_active = true
+       RETURNING id`,
+      [latitude, longitude, name ?? null, userId]
+    );
+
+    if (result.rowCount === 0) {
+      res.status(404).json({ message: 'No tienes un viaje activo' });
+      return;
+    }
+
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Error guardando destino personalizado:', error);
     res.status(500).json({ message: 'Error interno del servidor' });
   }
 };

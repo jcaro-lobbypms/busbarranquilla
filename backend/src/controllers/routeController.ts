@@ -538,8 +538,8 @@ export const getPlanRoutes = async (req: Request, res: Response): Promise<void> 
           const d2 = haversineKm(dLat, dLng, sLat, sLng);
           if (d2 < minD) { minD = d2; alightIdx = i; }
         }
-        if (hasOrigin && minO > 0.8) continue;           // no nearby origin stop
-        if (minD > 0.8) continue;                         // no nearby dest stop
+        if (hasOrigin && minO > 1.5) continue;            // no nearby origin stop
+        if (minD > 1.5) continue;                         // no nearby dest stop
         if (hasOrigin && alightIdx <= boardIdx) continue; // wrong direction
         originDistKm = minO;
         destDistKm = minD;

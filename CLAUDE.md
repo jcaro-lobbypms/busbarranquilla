@@ -2,6 +2,28 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ REGLA #1 — OBLIGATORIO SIN EXCEPCIÓN
+
+**Al terminar CUALQUIER tarea** (fix, feature, refactor, cambio de assets, nuevo patrón, etc.) **DEBES actualizar `AI_CONTEXT.md` Y `CLAUDE.md` antes de responder "listo".**
+
+No es opcional. No importa si el cambio parece pequeño. Si tocaste código, actualizas los docs.
+
+### Qué actualizar en `AI_CONTEXT.md`:
+- Nuevos endpoints → sección "API endpoints principales"
+- Cambios en DB → sección "Esquema de base de datos"
+- Nuevos patrones o bugs corregidos → sección "Patrones de código importantes"
+- Features completadas → sección "Estado del proyecto"
+- Cambios en flujos clave → sección "Flujos clave"
+- Siempre actualizar la fecha de "Última actualización" al final del archivo
+
+### Qué actualizar en `CLAUDE.md`:
+- Nuevas fases completadas → sección "Development Phases"
+- Cambios en arquitectura o patrones → secciones correspondientes
+
+### Cuándo actualizar la memoria del proyecto (`~/.claude/.../memory/`):
+- Bugs corregidos no obvios → memoria `feedback`
+- Patrones importantes descubiertos → memoria `feedback` o `project`
+
 ## What is this?
 
 **MiBus** (mibus.co) is a collaborative real-time public transport app for Barranquilla and the Metropolitan Area (Colombia). Users report bus locations in real time — the passenger IS the GPS. The system uses a credit economy to incentivize participation and offers premium subscription plans (Wompi payments).
@@ -15,7 +37,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Real-time | Socket.io 4 |
 | Auth | JWT (30-day expiry) + bcryptjs (salt 10) |
 | Web frontend | React + Vite + TailwindCSS + Leaflet |
-| Mobile | React Native 0.81 + Expo 54 (early stage) |
+| Mobile | Flutter 3 + Dart (flutter_app/) |
 | Payments | Wompi (Colombian payments) |
 | Notifications | Firebase Cloud Messaging (upcoming) |
 
@@ -56,12 +78,12 @@ npm run build  # Production build → ./dist
 npm run preview
 ```
 
-### Mobile (`mobile/`)
+### Flutter Mobile (`flutter_app/`)
 ```bash
-npm start         # Expo dev server
-npm run android
-npm run ios
-npm run web
+~/development/flutter/bin/flutter run              # Run on connected device
+~/development/flutter/bin/flutter build apk --release   # Build Android APK
+~/development/flutter/bin/flutter analyze          # Static analysis (must return 0 issues)
+~/development/flutter/bin/flutter pub get          # Install dependencies
 ```
 
 ---
@@ -319,6 +341,293 @@ Active while a trip is running (`view === 'active'`). All monitors start on trip
 Types: `AdminUser`, `UserRole`, `Company`, `CompanyRoute`, `CompanyInput`
 
 Functions: `getUsers`, `updateUserRole`, `toggleUserActive`, `deleteUser`, `getCompanies`, `getCompanyById`, `createCompany`, `updateCompany`, `toggleCompanyActive`, `deleteCompany`
+
+---
+
+### Flutter Mobile (`flutter_app/`)
+
+The Flutter app is the **primary mobile client** for MiBus. It connects to the same backend API (`api.mibus.co`) using JWT auth stored in `flutter_secure_storage`. It is feature-complete and targets Android (APK release builds).
+
+#### Flutter stack
+
+| Layer | Technology |
+|-------|-----------|
+| Framework | Flutter 3 + Dart |
+| State management | Riverpod 2 (`flutter_riverpod`, sealed state classes + Notifiers) |
+| HTTP | Dio 5 with auth interceptor |
+| Navigation | GoRouter 14 (declarative, auth guards, ShellRoute) |
+| Maps | flutter_map 7 + latlong2 (OpenStreetMap / CartoCDN tiles) |
+| Real-time | socket_io_client 3 |
+| Secure storage | flutter_secure_storage 9 |
+| Persistence | shared_preferences 2 (onboarding flag) |
+| Location | geolocator 13 + permission_handler 11 |
+| Auth (Google) | google_sign_in 6 |
+| Notifications | flutter_local_notifications 17 |
+
+#### Architecture pattern
+
+**MVVM + Repository** — strictly layered:
+
+1. **Presentation** — Feature screens + widgets, consume Riverpod providers
+2. **State** — Notifiers with sealed state classes (e.g. `TripIdle | TripLoading | TripActive | TripError`)
+3. **Domain** — Immutable model classes with `fromJson` / `toJson`
+4. **Data** — Repositories wrap remote sources; all results typed as `Result<T>` (Success | Failure)
+5. **Core** — Location, socket, storage, theme, l10n, API client
+
+All UI strings are in `lib/core/l10n/strings.dart` as `AppStrings` constants. Never hardcode strings in widgets.
+
+#### Routing (`lib/app.dart`)
+
+```
+/loading          → SplashScreen (during AuthInitial / AuthLoading)
+/onboarding       → OnboardingScreen (shown once on first launch via SharedPreferences)
+/login            → LoginScreen
+/register         → RegisterScreen
+/map-pick         → MapPickScreen (full-screen crosshair to pick lat/lng)
+/trip/confirm     → BoardingConfirmScreen (routeId, destLat?, destLng?)
+/trip/stop-select → StopSelectScreen (routeId)
+/profile/credits  → CreditsHistoryScreen
+/profile/trips    → TripHistoryScreen
+
+ShellRoute (BottomNavigationBar — 4 tabs):
+  /map            → MapScreen         (tab 0)
+  /planner        → PlannerScreen     (tab 1)
+  /trip           → ActiveTripScreen  (tab 2)
+  /trip/boarding  → BoardingScreen    (tab 2 — inside shell so nav bar visible)
+  /profile        → ProfileScreen     (tab 3)
+```
+
+**Auth redirect logic:**
+- `AuthInitial | AuthLoading` → `/loading`
+- `Authenticated` → `/map` (redirects away from `/loading`, `/login`, `/onboarding`)
+- `Unauthenticated | AuthError` → `/login`
+- First launch (`onboarding_done` not set) → `/onboarding` (checked before auth)
+
+**Important:** Use `context.push()` for sub-screens (credits, trips history) so back button appears. Use `context.go()` for tab-level navigation only.
+
+#### Flutter file map
+
+```
+flutter_app/lib/
+├── main.dart                        # ProviderScope + MiBusApp entry
+├── app.dart                         # GoRouter + onboardingDoneProvider + MiBusApp widget
+│
+├── core/
+│   ├── api/
+│   │   ├── api_paths.dart           # Base URL + endpoint path constants
+│   │   ├── api_client.dart          # Dio provider with interceptors
+│   │   └── interceptors/
+│   │       ├── auth_interceptor.dart    # Attaches JWT to every request
+│   │       └── error_interceptor.dart   # Maps HTTP errors → AppError
+│   ├── data/
+│   │   ├── sources/                 # Raw API calls (Dio) — one file per domain
+│   │   │   ├── auth_remote_source.dart
+│   │   │   ├── routes_remote_source.dart
+│   │   │   ├── stops_remote_source.dart
+│   │   │   ├── reports_remote_source.dart
+│   │   │   ├── trips_remote_source.dart
+│   │   │   ├── credits_remote_source.dart
+│   │   │   ├── payments_remote_source.dart
+│   │   │   └── users_remote_source.dart
+│   │   └── repositories/            # Business logic wrapping sources
+│   │       ├── auth_repository.dart         # login, register, logout, profile, loginWithGoogle
+│   │       ├── routes_repository.dart       # list, getById, search, nearby, plan, activity
+│   │       ├── stops_repository.dart        # listByRoute
+│   │       ├── reports_repository.dart      # create, confirm, resolve, getRouteReports
+│   │       ├── trips_repository.dart        # start, updateLocation, end, current, history
+│   │       ├── credits_repository.dart      # balance, history
+│   │       ├── payments_repository.dart     # getPlans, createCheckout
+│   │       └── users_repository.dart        # getFavorites, addFavorite, removeFavorite
+│   ├── domain/models/               # Immutable model classes
+│   │   ├── user.dart                # id, name, email, credits, role, premium status, referralCode
+│   │   ├── bus_route.dart           # id, name, code, company, geometry (List<LatLng>), distanceMeters
+│   │   ├── stop.dart                # id, route_id, name, latitude, longitude, stop_order
+│   │   ├── report.dart              # type, lat/lng, confirmations, is_valid, confirmed_by_me
+│   │   ├── active_trip.dart         # user position, destination, credits_earned, distance
+│   │   ├── trip_history_item.dart   # route info, started_at, duration_minutes, credits_earned
+│   │   ├── trip_end_result.dart     # credits, distance_meters, completion_bonus_earned
+│   │   ├── credit_transaction.dart  # amount, type, description, created_at
+│   │   ├── plan_result.dart         # route + nearestStop + origin/dest distances
+│   │   ├── route_activity.dart      # active_count, last_activity_minutes, events[], positions[]
+│   │   └── model_parsers.dart       # asInt/asString/asLatLngList helpers
+│   ├── error/
+│   │   ├── app_error.dart           # AppError(message, code) + AppError.fromDio()
+│   │   └── result.dart              # sealed Result<T> { Success(data) | Failure(error) }
+│   ├── l10n/
+│   │   └── strings.dart             # ALL UI strings as AppStrings constants (Spanish)
+│   ├── location/
+│   │   └── location_service.dart    # getCurrentPosition(), distanceMeters() Haversine
+│   ├── socket/
+│   │   └── socket_service.dart      # connect/disconnect, joinRoute/leaveRoute, on/off/emit
+│   ├── storage/
+│   │   ├── secure_storage.dart      # readToken() / writeToken() / deleteToken()
+│   │   └── onboarding_storage.dart  # isDone() / markDone() via SharedPreferences
+│   └── theme/
+│       ├── app_colors.dart          # Color palette: primary #2563EB, primaryDark #1E3A5F, success, warning, error
+│       ├── app_theme.dart           # AppTheme.light() — Material 3 theme
+│       └── app_text_styles.dart     # Text style definitions
+│
+├── features/
+│   ├── auth/
+│   │   ├── screens/
+│   │   │   ├── splash_screen.dart       # Animated bus on road, shown during auth init
+│   │   │   ├── onboarding_screen.dart   # 3-slide PageView (first launch only)
+│   │   │   ├── login_screen.dart        # Email/password + Google Sign-In + link to register
+│   │   │   └── register_screen.dart     # Name/email/password/phone + referral code + Google
+│   │   └── providers/
+│   │       ├── auth_state.dart          # sealed: AuthInitial | AuthLoading | Authenticated(user) | Unauthenticated | AuthErrorState
+│   │       └── auth_notifier.dart       # login(), register(), logout(), loginWithGoogle(), _refreshFromProfile()
+│   │
+│   ├── map/
+│   │   ├── screens/
+│   │   │   ├── map_screen.dart          # flutter_map with all layers, FAB "Me subí", active feed bar
+│   │   │   └── map_pick_screen.dart     # Full-screen map with fixed crosshair, reverse geocodes on confirm
+│   │   ├── providers/
+│   │   │   ├── map_state.dart           # sealed: MapLoading | MapReady(userPosition, buses, reports, activeFeedRoutes) | MapError
+│   │   │   └── map_provider.dart        # initialize(), confirmReport(), selectedFeedRouteProvider
+│   │   └── widgets/
+│   │       ├── user_marker_layer.dart       # Green dot normally; bus 🚌 icon when isOnTrip=true
+│   │       ├── bus_marker_layer.dart        # Real-time bus positions from socket
+│   │       ├── report_marker_layer.dart     # Report pins with confirm tap
+│   │       ├── active_feed_bar.dart         # Horizontal scroll of routes with recent activity
+│   │       ├── plan_markers_layer.dart      # Origin (green) + destination (red) markers from planner state
+│   │       └── active_route_bus_layer.dart  # Amber bus markers for active trips on selected route
+│   │
+│   ├── planner/
+│   │   ├── screens/
+│   │   │   └── planner_screen.dart      # Favorites scroll + origin/dest fields + nearby routes + results list
+│   │   ├── providers/
+│   │   │   ├── planner_state.dart       # sealed: PlannerIdle | PlannerLoading | PlannerResults | PlannerError
+│   │   │   ├── planner_notifier.dart    # setOrigin(), setDestination(), planRoute(), reset(), searchAddress() via Nominatim
+│   │   │   └── favorites_provider.dart  # AsyncNotifier for favorites list
+│   │   ├── models/
+│   │   │   └── nominatim_result.dart    # displayName, lat, lng — fromJson + coordinate-only constructor
+│   │   └── widgets/
+│   │       ├── address_search_field.dart  # Debounced autocomplete with map pick icon
+│   │       └── plan_result_card.dart      # Route result card with distances + activity badge
+│   │
+│   ├── trip/
+│   │   ├── screens/
+│   │   │   ├── boarding_screen.dart         # Route list + nearby cards → opens RoutePreviewSheet
+│   │   │   ├── boarding_confirm_screen.dart # Map preview (280px, interactive) + stop picker + map pick + reports
+│   │   │   ├── stop_select_screen.dart      # Full stop list for destination selection
+│   │   │   └── active_trip_screen.dart      # Trip view: map, reports, 4 monitors, "Me bajé" button
+│   │   ├── providers/
+│   │   │   ├── trip_state.dart              # sealed: TripIdle | TripLoading | TripActive(trip) | TripError | TripEnded(result)
+│   │   │   └── trip_notifier.dart           # startTrip(), updateLocation(), endTrip(), all 4 monitors
+│   │   └── widgets/
+│   │       ├── route_preview_sheet.dart     # Bottom sheet with 340px map before boarding confirm
+│   │       ├── route_reports_list.dart      # Active reports on route with confirm button
+│   │       ├── report_create_sheet.dart     # Form to create a new report
+│   │       ├── route_update_sheet.dart      # Vote trancon/ruta_real on a route
+│   │       └── trip_summary_sheet.dart      # End-of-trip credits/distance/bonus summary
+│   │
+│   ├── profile/
+│   │   ├── screens/
+│   │   │   ├── profile_screen.dart          # Name/email/role/premium chip + credits + links
+│   │   │   ├── credits_history_screen.dart  # Credit transaction history list
+│   │   │   └── trip_history_screen.dart     # Last 20 trips with route/date/duration/credits
+│   │   ├── providers/
+│   │   │   ├── profile_state.dart           # sealed: ProfileLoading | ProfileReady(user, balance) | ProfileError
+│   │   │   └── profile_notifier.dart        # load() — fetches user profile + credit balance
+│   │   └── widgets/
+│   │       ├── premium_card.dart            # Premium subscription card with Wompi checkout link
+│   │       └── credit_history_tile.dart     # Single credit transaction row
+│   │
+│   └── shell/
+│       └── main_shell.dart          # BottomNavigationBar (4 tabs) + resets planner on map tab tap
+│
+└── shared/
+    ├── widgets/
+    │   ├── app_button.dart          # AppButton.primary / .destructive / .outlined
+    │   ├── app_text_field.dart      # Labeled text input with error state
+    │   ├── app_snackbar.dart        # AppSnackbar.show(context, msg, SnackbarType.info|error|success)
+    │   ├── loading_indicator.dart   # Centered CircularProgressIndicator
+    │   ├── error_view.dart          # Error message + retry button
+    │   ├── empty_view.dart          # Icon + message for empty states
+    │   ├── route_code_badge.dart    # Colored badge for route code (D8, D12...)
+    │   ├── distance_chip.dart       # Distance with color: green ≤300m / amber ≤600m / red >600m
+    │   ├── route_activity_badge.dart # "N usuarios activos · hace X min"
+    │   └── route_polyline_layer.dart # flutter_map layer for blue route geometry polyline
+    └── extensions/
+        ├── datetime_extensions.dart # .formatDate(), .timeAgo()
+        └── double_extensions.dart   # .toDistanceString() → "250 m" or "1.2 km"
+```
+
+#### Key flows in the Flutter app
+
+**Onboarding (first launch):**
+`main.dart` → router checks `onboardingDoneProvider` (SharedPreferences `onboarding_done`) → if false → `/onboarding` (3 slides) → on finish → marks done → `/loading` → auth check
+
+**Auth init:**
+`AuthNotifier.build()` → `AuthLoading` → `_refreshFromProfile()` → JWT in SecureStorage → `/api/auth/profile` → `Authenticated(user)` or `Unauthenticated`
+
+**"Me subí" (boarding) flow:**
+1. FAB on MapScreen → `context.go('/trip/boarding')`
+2. `BoardingScreen` — shows all routes + nearby (300m) → tap route → `RoutePreviewSheet` (340px map + geometry)
+3. Confirm in sheet → `context.push('/trip/confirm?routeId=X')`
+4. `BoardingConfirmScreen` — shows 280px interactive map (polyline + user position + dest pin), stop picker with map-pick option
+5. Tap "Me monté" → `tripNotifier.startTrip(routeId, destinationStopId?)` → `TripActive` → `context.go('/trip')`
+
+**Active trip (`ActiveTripScreen`) — 4 monitors:**
+| Monitor | Interval | Trigger | Action |
+|---------|----------|---------|--------|
+| Auto-resolve trancón | 120s | Bus moved >1 km from report | `PATCH /api/reports/:id/resolve` |
+| Desvío detection | 30s | Off-route >250m for ≥90s | Banner: report / get off / ignore 5min |
+| Inactivity | 60s | No movement <50m for ≥600s | Modal "¿Sigues en el bus?" — auto-close 120s |
+| Dropoff alert | 15s | Destination set; premium=free, free=5cr | Prepare (400m) → Bájate ya (200m + vibrate) → Missed |
+
+**Trip planner flow:**
+1. `PlannerScreen` — auto-sets origin to GPS on load
+2. Address search → Nominatim API (bounded BQ bbox) with `NominatimResult`
+3. Map pick icon on field → `/map-pick` → crosshair → reverse geocode → back with result
+4. "Buscar rutas" → `POST /api/routes/plan` → `PlannerResults`
+5. Tap result → `context.push('/trip/confirm?routeId=X&destLat=Y&destLng=Z')`
+6. On map tab tap → `plannerNotifier.reset()` clears markers from map
+
+**Socket.io in Flutter:**
+- `socketServiceProvider` — singleton, connects with JWT on app start
+- `joinRoute(id)` / `leaveRoute(id)` — called in `BoardingConfirmScreen.initState/dispose` and `ActiveTripScreen`
+- Events: `route:new_report`, `route:report_confirmed`, `route:report_resolved` → reload reports / show toast
+
+#### Flutter specs (`flutter_specs/`)
+
+Specs are numbered markdown files describing feature implementations for Codex:
+
+| Spec | Title |
+|------|-------|
+| 00 | Overview |
+| 01 | Trip history |
+| 02 | Trip summary distance |
+| 03 | Report resolved socket |
+| 04 | Route activity |
+| 05 | Referral code |
+| 06 | Route update voting |
+| 07 | Parity fixes |
+| 08 | Boarding reports |
+| 09 | Map trip visuals |
+| 10 | Planner nearby boarding |
+| 11 | Premium benefits |
+| 12 | Map pick mode |
+| 13 | Boarding map preview (280px interactive, origin/dest pins, map pick for stop) |
+| 14 | Route preview bottom sheet (340px map before boarding confirm) |
+| 15 | Splash screen (animated bus on road, primaryDark background) |
+| 16 | Navigation fixes (boarding in ShellRoute, planner reset on map tab) |
+| 17 | Back button fix (context.push for profile sub-screens) |
+| 18 | Google Sign-In (google_sign_in package, POST /api/auth/google) |
+| 19 | Onboarding (3-slide PageView, shown once via SharedPreferences) |
+| 20 | Dropoff alert fixes (initState check, getLastKnownPosition, 3x heavyImpact) |
+| 21 | Trip end confirmation dialog (AlertDialog antes de Me bajé) |
+| 22 | Trip summary redesign (TripEnded: reportsCreated + streakDays, full-screen card) |
+| 23 | Desvío dialog differentiation (4 opciones: temporal vs ruta_real vs ignorar vs bajarse) |
+| 24 | Timer + credits visibility (badges con fondo en top bar) |
+| 25 | Smart ruta_real report (GPS validation + re-entry timer + backend geospatial check) |
+
+**When writing new specs for Codex:**
+- Reference existing file paths and widget/class names exactly
+- Show `old_string` → `new_string` diffs where modifying existing code
+- Always end with `flutter analyze` verification step
+- Keep specs focused — one feature per file
 
 ---
 
@@ -653,8 +962,36 @@ User votes that the bus route has changed or is stuck. ≥3 `ruta_real` votes tr
 - `Register.tsx` shows optional referral code field — awards +25 credits to referrer
 - `Profile.tsx` shows user's own referral code with copy button
 
-### Phase 4 — Future
-- React Native mobile app (early stage in `mobile/`)
-- Firebase push notifications
-- Google Play + App Store
+### Phase 4 — Flutter Mobile (In Progress)
+**Flutter app (`flutter_app/`) — feature-complete, producing release APKs:**
+- Full auth flow: email/password + Google Sign-In + onboarding
+- Animated splash screen (bus traveling on road)
+- Trip planner with Nominatim geocoding + map pick mode
+- "Me subí" boarding flow: route list → map preview sheet → boarding confirm with interactive map
+- Active trip with 4 background monitors (auto-resolve, desvío, inactivity, dropoff alerts)
+- Real-time reports + Socket.io rooms per route
+- Credits history + trip history (with back button navigation)
+- Premium card with Wompi checkout
+- Favorites system
+- Route activity badges
+- **Background location transmission** — GPS stream with Android ForegroundService + iOS background updates; "Allow all the time" permission dialog on trip start
+- **Active trip screen redesigned** — full-screen map (zoom 17, CartoCDN Voyager tiles with POIs), GPS auto-follow, overlaid controls
+- **Navigation bar** — replaced with Material 3 `NavigationBar` (pill indicator for active tab); blocked during active trip (shows "Viaje activo" bar instead)
+- **Dropoff alerts fixed** — prompt aparece en `initState` (no solo en `ref.listen`); `DropoffMonitor` usa `getLastKnownPosition()`; vibración 3x `heavyImpact` con 350ms delay
+- **Confirmación antes de "Me bajé"** — `AlertDialog` destructivo antes de `endTrip()`
+- **Resumen de viaje rediseñado** — pantalla completa `_TripSummaryScreen`: créditos grandes, duración, distancia, reportes creados, racha de días (cargados en paralelo con `Future.wait`)
+- **Desvío dialog diferenciado** — separa "desvío temporal (trancón)" de "ruta diferente al mapa"; cada opción con ícono, título, descripción y acción distinta
+- **Timer y créditos más visibles** — badges con fondo (`primaryDark` semitransparente / amber) en la top bar del viaje activo
+- **Reporte ruta_real inteligente** — `TripNotifier.reportRutaReal()`: GPS `getLastKnownPosition()` → backend valida contra geometría (200m umbral) → si aceptado activa `_deviationReEntryTimer` 15s → cuando GPS re-entra < 200m → `updateDeviationReEntry` + snackbar; cancelado en `_disposeMonitorsAndTimers()`
+- **Google Sign-In fix** — `serverClientId` (web OAuth client type 3) agregado a `GoogleSignIn()`; `signOut()` antes de `signIn()` para siempre mostrar picker de cuentas
+- **Google Password Manager (autofill)** — `AutofillGroup` + `AutofillHints.email/password` en login screen; `TextInput.finishAutofillContext()` al submit → Android muestra diálogo "Guardar contraseña"; `AppTextField` recibe `autofillHints`, `textInputAction`, `onEditingComplete`
+- **Assets visuales** — `assets/icon/logo.png`: logo circular MiBus con fondo transparente (login screen); `assets/splash/bus.png`: bus ilustración para splash center; `assets/splash/en_transito.png`: bus en tránsito (splash animado + marcadores `UserMarkerLayer`/`BusMarkerLayer`/active positions)
+- **Paleta "Profesional Atardecer"** — `app_colors.dart`: `primary #1A5080`, `primaryDark #0B2F52`, `accent #E7B342`, `error #CD1C2B`, `background #F5F7FA`; `app_theme.dart`: navigation bar azul oscuro con iconos/labels dorados, input borders redondeados, focus en `primary`
+- **Cards con borde izquierdo dinámico** — "Cerca de ti" (`boarding_screen.dart`), favoritos y "Buses en tu zona" (`planner_screen.dart`): fondo blanco + sombra suave + borde izquierdo 4px en `AppColors.forRouteCode(route.code)` (misma color que el badge del código de ruta)
+- **Alerta de bajada — selección en mapa** — cuando usuario acepta sin destino: `_pickDestinationOnMap()` abre `MapPickScreen` (crosshair + reverse geocode) en vez de lista de paradas; `TripNotifier.setDestinationByLatLng(lat, lng, label)` crea `Stop` sintético `id: -1` para `DropoffMonitor`; premium/admin no pagan 5 créditos
+
+**Pending (Flutter):**
+- Firebase push notifications (flutter_local_notifications already installed)
+- Google Play publishing (requires google-services.json + SHA-1 Firebase setup)
+- Wompi in-app payment flow (currently opens browser)
 - Alliance with AMB and SIBUS Barranquilla

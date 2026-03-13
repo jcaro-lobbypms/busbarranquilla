@@ -289,6 +289,12 @@ const createTables = async () => {
     `);
     console.log('✅ Columna total_distance_meters en active_trips');
 
+    // Destino personalizado (mapa): cuando el usuario pica un punto libre en vez de una parada
+    await pool.query(`ALTER TABLE active_trips ADD COLUMN IF NOT EXISTS custom_destination_lat DECIMAL(10,8) DEFAULT NULL`);
+    await pool.query(`ALTER TABLE active_trips ADD COLUMN IF NOT EXISTS custom_destination_lng DECIMAL(11,8) DEFAULT NULL`);
+    await pool.query(`ALTER TABLE active_trips ADD COLUMN IF NOT EXISTS custom_destination_name TEXT DEFAULT NULL`);
+    console.log('✅ Columnas custom_destination en active_trips');
+
     // Cerrar viajes zombie (activos por más de 4 horas sin actualización de ubicación)
     const zombieClosed = await pool.query(`
       UPDATE active_trips
