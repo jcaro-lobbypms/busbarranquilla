@@ -75,6 +75,8 @@ class AuthNotifier extends Notifier<AuthState> {
       final googleSignIn = GoogleSignIn(
         serverClientId: '681993535892-0d8sri8quc9kuvbs03krkl2ftfq8s6k2.apps.googleusercontent.com',
       );
+      // Disconnect any cached account so the account picker always appears.
+      await googleSignIn.signOut();
       final account = await googleSignIn.signIn();
       if (account == null) {
         state = const Unauthenticated();
