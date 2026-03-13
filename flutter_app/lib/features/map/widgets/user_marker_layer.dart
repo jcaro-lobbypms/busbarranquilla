@@ -20,24 +20,10 @@ class UserMarkerLayer extends StatelessWidget {
       markers: <Marker>[
         Marker(
           point: position,
-          width: isOnTrip ? 34 : 20,
-          height: isOnTrip ? 34 : 20,
+          width: isOnTrip ? 44 : 20,
+          height: isOnTrip ? 44 : 20,
           child: isOnTrip
-              ? Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.success,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
-                    boxShadow: <BoxShadow>[
-                      BoxShadow(
-                        color: AppColors.success.withValues(alpha: 0.4),
-                        blurRadius: 8,
-                        spreadRadius: 2,
-                      ),
-                    ],
-                  ),
-                  child: const Icon(Icons.directions_bus, color: Colors.white, size: 18),
-                )
+              ? Image.asset('assets/splash/en_transito.png', width: 44, height: 44)
               : Container(
                   decoration: BoxDecoration(
                     color: AppColors.primary,

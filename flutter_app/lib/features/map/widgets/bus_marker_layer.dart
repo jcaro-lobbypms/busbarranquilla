@@ -4,7 +4,6 @@ import 'package:latlong2/latlong.dart';
 
 import '../../../core/domain/models/active_trip.dart';
 import '../../../core/l10n/strings.dart';
-import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_bottom_sheet.dart';
 
 class BusMarkerLayer extends StatelessWidget {
@@ -34,8 +33,8 @@ class BusMarkerLayer extends StatelessWidget {
 
             return Marker(
               point: latLng,
-              width: 36,
-              height: 36,
+              width: 44,
+              height: 44,
               child: GestureDetector(
                 onTap: () {
                   AppBottomSheet.show<void>(
@@ -44,13 +43,7 @@ class BusMarkerLayer extends StatelessWidget {
                     child: Text('$passengerCount ${AppStrings.passengersLabel}'),
                   );
                 },
-                child: Container(
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.primary,
-                  ),
-                  child: const Icon(Icons.directions_bus, color: AppColors.surface, size: 20),
-                ),
+                child: Image.asset('assets/splash/en_transito.png', width: 44, height: 44),
               ),
             );
           })

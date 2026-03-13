@@ -163,15 +163,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                   return MarkerLayer(
                     markers: activePositions.map((pos) => Marker(
                       point: pos,
-                      width: 32,
-                      height: 32,
-                      child: Container(
-                        decoration: const BoxDecoration(
-                          color: Colors.amber,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.directions_bus, color: Colors.white, size: 18),
-                      ),
+                      width: 40,
+                      height: 40,
+                      child: Image.asset('assets/splash/en_transito.png', width: 40, height: 40),
                     )).toList(),
                   );
                 },
