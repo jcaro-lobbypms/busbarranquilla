@@ -13,6 +13,7 @@ import '../../../shared/widgets/app_text_field.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/loading_indicator.dart';
 import '../../../shared/widgets/route_code_badge.dart';
+import '../../map/providers/waiting_route_provider.dart';
 import '../widgets/route_preview_sheet.dart';
 
 class BoardingScreen extends ConsumerStatefulWidget {
@@ -117,6 +118,13 @@ class _BoardingScreenState extends ConsumerState<BoardingScreen> {
         onConfirm: () {
           Navigator.of(ctx).pop();
           context.push('/trip/confirm?routeId=${route.id}');
+        },
+        onWait: (geometry) {
+          Navigator.of(ctx).pop();
+          final routeWithGeometry =
+              geometry.isNotEmpty ? route.copyWith(geometry: geometry) : route;
+          ref.read(selectedWaitingRouteProvider.notifier).state = routeWithGeometry;
+          context.go('/map');
         },
       ),
     );

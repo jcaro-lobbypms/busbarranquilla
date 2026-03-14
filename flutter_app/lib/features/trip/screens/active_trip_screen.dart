@@ -28,15 +28,39 @@ class ActiveTripScreen extends ConsumerStatefulWidget {
   ConsumerState<ActiveTripScreen> createState() => _ActiveTripScreenState();
 }
 
-class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
+class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen>
+    with SingleTickerProviderStateMixin {
   final MapController _mapController = MapController();
   bool _suspiciousDialogShown = false;
   bool _reportsExpanded = false;
   LatLng? _lastCenter;
 
+  // Credit gain animation
+  late final AnimationController _creditAnimController;
+  late final Animation<Offset> _creditSlide;
+  late final Animation<double> _creditFade;
+  int _creditGain = 0;
+
   @override
   void initState() {
     super.initState();
+    _creditAnimController = AnimationController(
+      duration: const Duration(milliseconds: 1600),
+      vsync: this,
+    );
+    _creditSlide = Tween<Offset>(
+      begin: Offset.zero,
+      end: const Offset(0, -3),
+    ).animate(CurvedAnimation(
+      parent: _creditAnimController,
+      curve: Curves.easeOut,
+    ));
+    _creditFade = Tween<double>(begin: 1, end: 0).animate(
+      CurvedAnimation(
+        parent: _creditAnimController,
+        curve: const Interval(0.45, 1.0, curve: Curves.easeIn),
+      ),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final notifier = ref.read(tripNotifierProvider.notifier);
@@ -59,6 +83,7 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
   @override
   void dispose() {
     _mapController.dispose();
+    _creditAnimController.dispose();
     super.dispose();
   }
 
@@ -410,6 +435,13 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
         WidgetsBinding.instance.addPostFrameCallback((_) => _followUser(LatLng(lat, lng)));
       }
 
+      // Credit gain animation.
+      final gained = next.trip.creditsEarned - (prev?.trip.creditsEarned ?? 0);
+      if (gained > 0) {
+        _creditGain = gained;
+        _creditAnimController.forward(from: 0);
+      }
+
       if (next.showInactivityModal && prev?.showInactivityModal != true) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _showInactivityDialog());
       }
@@ -668,6 +700,52 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
               right: 12,
               child: _OccupancyBadge(state: active.occupancyState!),
             ),
+
+          // ── Credit gain floating badge ────────────────────────────────────
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedBuilder(
+                animation: _creditAnimController,
+                builder: (_, __) {
+                  if (_creditAnimController.isDismissed) return const SizedBox.shrink();
+                  return Align(
+                    alignment: Alignment.topRight,
+                    child: Padding(
+                      padding: EdgeInsets.only(top: topPadding + 52, right: 16),
+                      child: SlideTransition(
+                        position: _creditSlide,
+                        child: FadeTransition(
+                          opacity: _creditFade,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.amber,
+                              borderRadius: BorderRadius.circular(24),
+                              boxShadow: const <BoxShadow>[
+                                BoxShadow(
+                                  color: Color(0x55000000),
+                                  blurRadius: 10,
+                                  offset: Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Text(
+                              '+$_creditGain 🔥',
+                              style: const TextStyle(
+                                color: Colors.black87,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 20,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
 
           // ── Re-center + change destination buttons ───────────────────────
           Positioned(

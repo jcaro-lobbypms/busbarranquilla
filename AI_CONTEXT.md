@@ -724,4 +724,58 @@ El marcador UI se actualiza en cada fix GPS (sin throttle). El backend sigue con
 
 ---
 
-*Última actualización: 2026-03-14 (v17)*
+### Flutter — Animación de créditos ganados (viaje activo)
+
+Badge `+N 🔥` flotante en `ActiveTripScreen`. Aparece en la esquina superior derecha (junto al badge de créditos), sube suavemente y se desvanece en 1.6 s.
+
+- `SingleTickerProviderStateMixin` + `AnimationController(1600ms)`
+- `SlideTransition`: `Offset(0,0) → Offset(0,-3)` con `Curves.easeOut`
+- `FadeTransition`: `1→0` con `Interval(0.45, 1.0)` — visible la primera mitad, desvanece la segunda
+- Trigger: `ref.listen` detecta `next.creditsEarned > prev.creditsEarned` → `forward(from:0)`
+- `IgnorePointer` + `Positioned.fill` para no bloquear interacciones con el mapa
+
+---
+
+### Flutter — Modo "Esperando el bus" con ETA en tiempo real
+
+Cuando el usuario está en `BoardingScreen` y toca `RoutePreviewSheet`, puede elegir:
+- **"Me monté en este bus"** → empieza viaje normalmente
+- **"Esperar este bus"** → activa modo espera: regresa al mapa, muestra buses en vivo de esa ruta y calcula ETA
+
+**Componentes:**
+
+| Archivo | Rol |
+|---------|-----|
+| `map/providers/waiting_route_provider.dart` | `selectedWaitingRouteProvider = StateProvider<BusRoute?>` |
+| `trip/widgets/route_preview_sheet.dart` | Param `onWait: (List<LatLng> geometry)?` → botón "Esperar este bus" |
+| `trip/screens/boarding_screen.dart` | `onWait` callback: guarda ruta + navega a `/map` |
+| `map/screens/map_screen.dart` | Polling Timer.periodic(15s) + ETA + `_WaitingBanner` widget |
+
+**Flujo:**
+1. Usuario tapa "Esperar este bus" en `RoutePreviewSheet`
+2. Sheet pasa `_geometry` (ya cargada) al callback `onWait`
+3. `BoardingScreen` guarda `BusRoute.copyWith(geometry: loadedGeometry)` en `selectedWaitingRouteProvider` y navega a `/map`
+4. `MapScreen.ref.listen` detecta cambio en `selectedWaitingRouteProvider` → `_startWaiting(route)`
+5. `_startWaiting` llama `_pollWaitingRoute(route)` inmediatamente + `Timer.periodic(15s)`
+6. `_pollWaitingRoute` → `getActivity(routeId)` → actualiza `mapActivePositionsProvider` (buses en mapa) y calcula ETA
+
+**ETA — algoritmo frontend-only:**
+- `_nearestVertex(point, geometry)` → índice del vértice más cercano en la polilínea
+- `_polylineDistance(geometry, from, to)` → distancia acumulada entre dos índices
+- `_calculateEta(buses, user, geometry)` → busca bus con `busIdx <= userIdx` (detrás del usuario) con menor distancia; ETA = distancia / 25 km/h → minutos
+- Si todos los buses ya pasaron al usuario → `null` → muestra "Sin buses activos"
+
+**`_WaitingBanner`:**
+- Fondo `primaryDark`, texto blanco/amber, RouteCodeBadge
+- Estado "Buscando..." (spinner) mientras primer poll no termina
+- ETA: "~N min" / "Bus llegando ahora 🎉" / "Sin buses activos"
+- Botón "Dejar de esperar" → limpia `selectedWaitingRouteProvider`
+
+**Auto-limpieza:**
+- `ref.listen(tripNotifierProvider)` → cuando `TripActive` → limpia waiting route automáticamente
+- `ActiveFeedBar` solo se muestra si `waitingRoute == null`
+- Polilínea de la ruta esperada se muestra en lugar de la ruta del feed seleccionada
+
+---
+
+*Última actualización: 2026-03-14 (v19)*

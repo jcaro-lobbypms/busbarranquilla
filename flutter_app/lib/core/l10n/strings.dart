@@ -288,4 +288,14 @@ abstract final class AppStrings {
   static const onboarding3Body =
       'Reportar trancones, confirmar reportes y completar viajes te da créditos. '
       'Úsalos para activar alertas de bajada y más.';
+
+  // Waiting mode
+  static const waitingTitle = 'Esperando tu bus';
+  static const waitButton = 'Esperar este bus';
+  static const waitingCancel = 'Dejar de esperar';
+  static const waitingEtaSearching = 'Buscando buses...';
+  static const waitingEtaNoData = 'Sin buses activos';
+  static const waitingEtaArriving = 'Bus llegando ahora 🎉';
+  static const waitingEtaMinutes = 'min';
+  static const waitingActiveBar = '🔔 Esperando bus';
 }
