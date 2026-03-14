@@ -747,35 +747,58 @@ Cuando el usuario está en `BoardingScreen` y toca `RoutePreviewSheet`, puede el
 | Archivo | Rol |
 |---------|-----|
 | `map/providers/waiting_route_provider.dart` | `selectedWaitingRouteProvider = StateProvider<BusRoute?>` |
+| `map/providers/waiting_bus_positions_provider.dart` | `waitingBusPositionsProvider = StateProvider<List<LatLng>>` — separado de `mapActivePositionsProvider` |
 | `trip/widgets/route_preview_sheet.dart` | Param `onWait: (List<LatLng> geometry)?` → botón "Esperar este bus" |
-| `trip/screens/boarding_screen.dart` | `onWait` callback: guarda ruta + navega a `/map` |
-| `map/screens/map_screen.dart` | Polling Timer.periodic(15s) + ETA + `_WaitingBanner` widget |
+| `trip/screens/boarding_screen.dart` | `onWait` callback: guarda ruta con geometría + navega a `/map` |
+| `map/screens/map_screen.dart` | Polling Timer.periodic(15s) + ETA + `_WaitingBanner` (overlay ETA) |
+| `shell/main_shell.dart` | `_WaitingActiveBar` — bloquea tabs, muestra ruta + cancel |
 
-**Flujo:**
-1. Usuario tapa "Esperar este bus" en `RoutePreviewSheet`
+**Flujo completo:**
+1. Usuario toca "Esperar este bus" en `RoutePreviewSheet`
 2. Sheet pasa `_geometry` (ya cargada) al callback `onWait`
-3. `BoardingScreen` guarda `BusRoute.copyWith(geometry: loadedGeometry)` en `selectedWaitingRouteProvider` y navega a `/map`
-4. `MapScreen.ref.listen` detecta cambio en `selectedWaitingRouteProvider` → `_startWaiting(route)`
-5. `_startWaiting` llama `_pollWaitingRoute(route)` inmediatamente + `Timer.periodic(15s)`
-6. `_pollWaitingRoute` → `getActivity(routeId)` → actualiza `mapActivePositionsProvider` (buses en mapa) y calcula ETA
+3. `BoardingScreen` guarda `BusRoute.copyWith(geometry: loadedGeometry)` en `selectedWaitingRouteProvider` + `context.go('/map')`
+4. `MainShell.ref.listen` detecta cambio → fuerza navegación a `/map` si no está ahí
+5. `MainShell` reemplaza `NavigationBar` con `_WaitingActiveBar` → tabs bloqueados
+6. `MapScreen.ref.listen` detecta cambio → `_startWaiting(route)` → poll inmediato + `Timer.periodic(15s)`
+7. `_pollWaitingRoute` → `getActivity(routeId)` → actualiza `waitingBusPositionsProvider` (buses en mapa) y calcula ETA
+
+**Layout durante modo espera:**
+```
+┌──────────────────────────────────────┐
+│  MAPA full size (arriba del bar)     │
+│  polilínea azul de ruta esperada     │
+│  buses en tiempo real (iconos 🚌)   │
+│ ┌────────────────────────────────┐   │  ← _WaitingBanner (overlay, bottom:12)
+│ │ [D8] El Campito  ⏱ ~4 min    │   │    solo ETA, sin botón cancel
+│ └────────────────────────────────┘   │
+└──────────────────────────────────────┘
+┌──────────────────────────────────────┐  ← _WaitingActiveBar (shell bottomNavigationBar)
+│ 🔔 Esperando bus                     │    único botón "Dejar de esperar"
+│ D8 · El Campito  [Dejar de esperar] │
+└──────────────────────────────────────┘
+```
 
 **ETA — algoritmo frontend-only:**
 - `_nearestVertex(point, geometry)` → índice del vértice más cercano en la polilínea
 - `_polylineDistance(geometry, from, to)` → distancia acumulada entre dos índices
-- `_calculateEta(buses, user, geometry)` → busca bus con `busIdx <= userIdx` (detrás del usuario) con menor distancia; ETA = distancia / 25 km/h → minutos
-- Si todos los buses ya pasaron al usuario → `null` → muestra "Sin buses activos"
+- `_calculateEta(buses, user, geometry)` → bus con `busIdx <= userIdx` (aún no alcanza al usuario) con menor distancia; ETA = distancia / 25 km/h → minutos
+- Si todos los buses ya pasaron al usuario → `null` → "Sin buses activos"
 
-**`_WaitingBanner`:**
-- Fondo `primaryDark`, texto blanco/amber, RouteCodeBadge
-- Estado "Buscando..." (spinner) mientras primer poll no termina
-- ETA: "~N min" / "Bus llegando ahora 🎉" / "Sin buses activos"
-- Botón "Dejar de esperar" → limpia `selectedWaitingRouteProvider`
+**Providers de posición — sin conflicto:**
+- `mapActivePositionsProvider` — escrito por PlannerScreen, leído en mapa cuando `waitingRoute == null`
+- `waitingBusPositionsProvider` — escrito por `_pollWaitingRoute`, leído en mapa cuando `waitingRoute != null`
 
 **Auto-limpieza:**
-- `ref.listen(tripNotifierProvider)` → cuando `TripActive` → limpia waiting route automáticamente
-- `ActiveFeedBar` solo se muestra si `waitingRoute == null`
-- Polilínea de la ruta esperada se muestra en lugar de la ruta del feed seleccionada
+- `MapScreen.ref.listen(tripNotifierProvider)` → `TripActive` → limpia `selectedWaitingRouteProvider` → `_stopWaiting()` → limpia `waitingBusPositionsProvider`
+- `MainShell.ref.listen(tripNotifierProvider)` → `TripActive` → `context.go('/trip')`
+- `_WaitingActiveBar` "Dejar de esperar" → `selectedWaitingRouteProvider = null` → todo se limpia en cadena
+- Guard post-await en `_pollWaitingRoute`: `ref.read(selectedWaitingRouteProvider)?.id != route.id` → aborta si ruta cambió
+
+**Bugs corregidos durante implementación:**
+- Race condition: poll en vuelo podía re-llenar posiciones después de cancelar → guard de `route.id`
+- `ref.listen<dynamic>` → corregido a `ref.listen<BusRoute?>`
+- Dos botones cancel visibles → cancel solo en shell bar, banner solo muestra ETA
 
 ---
 
-*Última actualización: 2026-03-14 (v19)*
+*Última actualización: 2026-03-14 (v20)*
