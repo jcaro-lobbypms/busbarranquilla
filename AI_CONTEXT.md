@@ -697,4 +697,19 @@ busbarranquilla/
 ---
 
 *Este archivo se actualiza automáticamente con cada cambio relevante al proyecto MiBus.*
-*Última actualización: 2026-03-13 (v14)*
+### Flutter — Parada de destino en BoardingConfirmScreen
+
+**Causa 1:** Viniendo de "mis rutas" / "Subir a este bus" la ruta es `/trip/confirm?routeId=X` sin `destLat/destLng` → `autoSelected = null` → ningún marcador de parada en el mapa inicial.
+
+**Causa 2:** Al elegir parada desde la lista o mapa pick, el marcador se añade al `MarkerLayer` pero `initialCameraFit` solo corre en el primer render — la cámara no se mueve para mostrar la nueva parada.
+
+**Fix:** Método `_fitCameraToStop(Stop stop)` que llama `_mapController.fitCamera(CameraFit.bounds(...))` con la parada + posición del usuario. Llamado:
+- En `_load()` → después de los dos `setState` (loading=false + userPosition) via `addPostFrameCallback` — evita que la cámara quede en zoom de ruta completa
+- En `_showStopListModal` → `ListTile.onTap` → después del `Navigator.pop()` via `addPostFrameCallback`
+- En `onPickFromMap` → después de `setState`
+
+**Auto-selección solo con O+D:** La parada de destino se auto-selecciona únicamente cuando `destLat/destLng` están presentes (flujo planificador). Sin destino ("Subir a este bus"), el usuario elige la parada manualmente.
+
+---
+
+*Última actualización: 2026-03-13 (v16)*

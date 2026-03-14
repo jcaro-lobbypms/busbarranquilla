@@ -161,6 +161,19 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
     if (mapState is MapReady && mapState.userPosition != null && mounted) {
       setState(() => _userPosition = mapState.userPosition);
     }
+
+    // After both setStates are processed, re-fit the camera to show the
+    // selected stop + user position together (initialCameraFit only runs
+    // on first render and may zoom out to fit the entire route geometry).
+    if (autoSelected != null) {
+      final stop = stops.firstWhere(
+        (s) => s.id == autoSelected,
+        orElse: () => stops.first,
+      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _fitCameraToStop(stop);
+      });
+    }
   }
 
   Stop? get _selectedStop {
@@ -286,6 +299,11 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
                           onTap: () {
                             setState(() => _selectedStopId = selected ? null : stop.id);
                             Navigator.of(ctx).pop();
+                            if (!selected) {
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (mounted) _fitCameraToStop(stop);
+                              });
+                            }
                           },
                           leading: Icon(
                             selected ? Icons.check_circle : Icons.radio_button_unchecked,
@@ -303,6 +321,26 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
   }
 
   // ── Map helpers ──────────────────────────────────────────────────────────────
+
+  /// Moves the camera to show the selected stop + user position after
+  /// the stop changes post-initial-render (initialCameraFit runs only once).
+  void _fitCameraToStop(Stop stop) {
+    final stopPos = LatLng(stop.latitude, stop.longitude);
+    final points = <LatLng>[
+      stopPos,
+      if (_userPosition != null) _userPosition!,
+    ];
+    if (points.length == 1) {
+      _mapController.move(stopPos, 16);
+      return;
+    }
+    _mapController.fitCamera(
+      CameraFit.bounds(
+        bounds: LatLngBounds.fromPoints(points),
+        padding: const EdgeInsets.fromLTRB(60, 80, 60, 280),
+      ),
+    );
+  }
 
   MapOptions _buildMapOptions() {
     final List<LatLng> points = <LatLng>[
@@ -654,7 +692,11 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
                         );
                         if (d < bestDist) { bestDist = d; nearest = s; }
                       }
-                      if (nearest != null) setState(() => _selectedStopId = nearest!.id);
+                      if (nearest != null) {
+                        final found = nearest;
+                        setState(() => _selectedStopId = found.id);
+                        _fitCameraToStop(found);
+                      }
                     },
                   ),
                   const SizedBox(height: 12),
