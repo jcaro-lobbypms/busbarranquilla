@@ -138,19 +138,22 @@ Array JSON:`,
       ],
     });
 
-    const raw = message.content[0].type === 'text' ? '[' + message.content[0].text.trim() : '';
+    const claudeText = message.content[0].type === 'text' ? message.content[0].text.trim() : '';
+    // Claude continues after the '[' prefill — prepend it back
+    // But handle the case where Claude echoes the '[' itself
+    const raw = claudeText.startsWith('[') ? claudeText : '[' + claudeText;
     // Strip markdown fences if present
     const cleaned = raw.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
-    // Extract JSON array
-    const match = cleaned.match(/\[[\s\S]*?\]/);
+    // Extract JSON array — greedy match to capture the full array
+    const match = cleaned.match(/\[[\s\S]*\]/);
     if (match) {
       try {
         const parsed = JSON.parse(match[0]) as unknown[];
         intersections = parsed.filter((x): x is string => typeof x === 'string' && x.length > 3);
       } catch {
-        // Try to extract strings manually if JSON is malformed
+        // Try to extract quoted strings manually if JSON is malformed
         const strings = cleaned.match(/"([^"]+)"/g);
-        if (strings) intersections = strings.map(s => s.replace(/"/g, ''));
+        if (strings) intersections = strings.map(s => s.replace(/"/g, '')).filter(s => s.length > 3);
       }
     }
   } catch (err) {
@@ -161,7 +164,7 @@ Array JSON:`,
   if (intersections.length === 0) {
     res.status(422).json({
       error: 'La IA no pudo extraer intersecciones del texto.',
-      debug: process.env.NODE_ENV !== 'production' ? { raw: intersections } : undefined,
+      debug: { intersections },
     });
     return;
   }
