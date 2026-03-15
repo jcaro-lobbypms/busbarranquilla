@@ -37,6 +37,17 @@ class TripNotifier extends Notifier<TripState> {
   DropoffMonitor? _dropoffMonitor;
   bool get hasDropoffMonitor => _dropoffMonitor != null;
 
+  /// Vibrates with [pattern] and [intensities] only if the device has a vibrator.
+  /// Silently skips on devices without hardware or API < 26 for intensities.
+  static Future<void> _vibrate({
+    required List<int> pattern,
+    required List<int> intensities,
+  }) async {
+    final hasVibrator = await Vibration.hasVibrator() ?? false;
+    if (!hasVibrator) return;
+    unawaited(Vibration.vibrate(pattern: pattern, intensities: intensities));
+  }
+
   /// Current dropoff destination coordinates, if a monitor is running.
   /// Used to center the map-pick screen on the already-selected destination.
   LatLng? get dropoffMonitorDestination {
@@ -508,7 +519,7 @@ class TripNotifier extends Notifier<TripState> {
         if (state is! TripActive) return;
         state = (state as TripActive).copyWith(dropoffAlert: DropoffAlert.prepare);
         // Two medium pulses — noticeable but not panic-inducing.
-        unawaited(Vibration.vibrate(
+        unawaited(_vibrate(
           pattern: [0, 200, 200, 200],
           intensities: [0, 180, 0, 180],
         ));
@@ -522,7 +533,7 @@ class TripNotifier extends Notifier<TripState> {
         if (state is! TripActive) return;
         state = (state as TripActive).copyWith(dropoffAlert: DropoffAlert.alight);
         // Five heavy pulses — urgent "get off now" feel.
-        unawaited(Vibration.vibrate(
+        unawaited(_vibrate(
           pattern: [0, 400, 150, 400, 150, 400, 150, 400, 150, 400],
           intensities: [0, 255, 0, 255, 0, 255, 0, 255, 0, 255],
         ));
@@ -762,7 +773,7 @@ class TripNotifier extends Notifier<TripState> {
       stops: activeState.stops,
       onDesvio: () async {
         // 5 strong pulses: [on, off, on, off, on, off, on, off, on] in ms
-        unawaited(Vibration.vibrate(
+        unawaited(_vibrate(
           pattern: [0, 300, 150, 300, 150, 300, 150, 300, 150, 300],
           intensities: [0, 255, 0, 255, 0, 255, 0, 255, 0, 255],
         ));

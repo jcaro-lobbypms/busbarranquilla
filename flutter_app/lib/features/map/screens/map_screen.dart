@@ -63,7 +63,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       }
 
       await ref.read(mapNotifierProvider.notifier).initialize();
-      if (mounted) _startPositionStream();
+      if (!mounted) return;
+      _startPositionStream();
+      // If waiting mode was already active before MapScreen mounted
+      // (e.g. started from PlannerScreen or BoardingScreen), begin polling now.
+      // ref.listen only fires on future changes, so we must bootstrap here.
+      final pendingWait = ref.read(selectedWaitingRouteProvider);
+      if (pendingWait != null) _startWaiting(pendingWait);
     });
   }
 

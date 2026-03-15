@@ -367,7 +367,11 @@ El mapa ocupa toda la pantalla (`Stack` sin `AppBar`). Controles como overlays:
 - **Banners flotantes**: GPS lost (naranja), alerta bajada (rojo/amarillo) — se apilan bajo el top card
 - **Botón re-centrar** (bottom-right): mueve mapa al GPS con zoom 17
 - **Panel inferior**: reportes plegables (tap para expandir) + botones "Reportar" | "Me bajé"
-- `MapController` sigue automáticamente la posición GPS en cada update (`_followUser`)
+- `_autoFollow = true` por defecto — mapa sigue GPS automáticamente (`_followUser`)
+- `onPositionChanged(hasGesture)` → pan manual → `_autoFollow = false` → deja de jalonear al usuario
+- Botón re-centrar cambia color: blanco (auto-follow activo) / azul sólido (manual, indica que hay que tocar)
+- Al tocar re-centrar: `_autoFollow = true` + mueve mapa a `center` (posición GPS actual del viaje)
+- El marcador del bus **siempre** se actualiza en tiempo real, independiente de `_autoFollow`
 - Zoom inicial: **17** (nivel de calle, muestra el entorno inmediato)
 - Bus icon: 44px con sombra azul pulsante, borde blanco
 
@@ -794,11 +798,26 @@ Cuando el usuario está en `BoardingScreen` y toca `RoutePreviewSheet`, puede el
 - `_WaitingActiveBar` "Dejar de esperar" → `selectedWaitingRouteProvider = null` → todo se limpia en cadena
 - Guard post-await en `_pollWaitingRoute`: `ref.read(selectedWaitingRouteProvider)?.id != route.id` → aborta si ruta cambió
 
+**Modo espera desde PlannerScreen:**
+- `PlanResultCard` tiene `onWait: VoidCallback?` opcional — muestra botón "Esperar este bus" (outlined) debajo de la card
+- El tap en la card sigue siendo boarding (no duplicado) — solo se agrega el botón secundario de espera
+- Nearby routes expandidas en planner: dos botones — "Esperar este bus" (outlined) + "Subir a este bus" (filled)
+- `_startWaiting(BusRoute)` en `PlannerScreen`: construye `BusRoute` desde `PlanResult` → setea provider → `context.go('/map')`
+
+**Bug crítico corregido — bootstrap de waiting mode:**
+- `ref.listen` solo dispara cambios futuros. Si `MapScreen` se monta DESPUÉS de que `selectedWaitingRouteProvider` fue seteado (desde PlannerScreen o BoardingScreen), el listener no dispara y `_startWaiting` nunca se llama
+- Fix: en `MapScreen.initState`, después de `initialize()`, se lee `selectedWaitingRouteProvider` y se llama `_startWaiting` si ya tiene valor
+
 **Bugs corregidos durante implementación:**
 - Race condition: poll en vuelo podía re-llenar posiciones después de cancelar → guard de `route.id`
 - `ref.listen<dynamic>` → corregido a `ref.listen<BusRoute?>`
 - Dos botones cancel visibles → cancel solo en shell bar, banner solo muestra ETA
 
+**Vibración — fix:**
+- `Vibration.vibrate()` silenciosamente fallaba en algunos dispositivos sin vibrador
+- Fix: helper estático `_vibrate({pattern, intensities})` en `TripNotifier` — llama `Vibration.hasVibrator()` primero, si retorna `false` no vibra
+- Los 3 call sites (prepare/alight/desvío) usan `_vibrate` en vez de `Vibration.vibrate` directo
+
 ---
 
-*Última actualización: 2026-03-14 (v20)*
+*Última actualización: 2026-03-14 (v21)*

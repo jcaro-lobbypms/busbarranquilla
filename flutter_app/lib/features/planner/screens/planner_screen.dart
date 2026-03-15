@@ -22,6 +22,7 @@ import '../../../shared/widgets/route_code_badge.dart';
 import '../../map/providers/map_active_positions_provider.dart';
 import '../../map/providers/map_provider.dart';
 import '../../map/providers/map_state.dart';
+import '../../map/providers/waiting_route_provider.dart';
 import '../models/nominatim_result.dart';
 import '../providers/favorites_provider.dart';
 import '../providers/planner_notifier.dart';
@@ -128,6 +129,11 @@ class _PlannerScreenState extends ConsumerState<PlannerScreen> {
     setState(() => _refreshingNearby = true);
     await ref.read(plannerNotifierProvider.notifier).loadNearbyForOrigin(origin);
     if (mounted) setState(() => _refreshingNearby = false);
+  }
+
+  void _startWaiting(BusRoute route) {
+    ref.read(selectedWaitingRouteProvider.notifier).state = route;
+    context.go('/map');
   }
 
   Future<void> _updateActivePositions(int routeId) async {
@@ -390,8 +396,13 @@ class _PlannerScreenState extends ConsumerState<PlannerScreen> {
                             const Divider(height: 1),
                             const SizedBox(height: 10),
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: <Widget>[
+                                OutlinedButton.icon(
+                                  onPressed: () => _startWaiting(route),
+                                  icon: const Icon(Icons.notifications_active_outlined, size: 16),
+                                  label: const Text(AppStrings.waitButton),
+                                ),
                                 FilledButton.icon(
                                   onPressed: () => context.push('/trip/confirm?routeId=${route.id}'),
                                   icon: const Icon(Icons.directions_bus, size: 16),
@@ -444,6 +455,16 @@ class _PlannerScreenState extends ConsumerState<PlannerScreen> {
                                   '/trip/confirm?routeId=${result.id}$destParam',
                                 );
                               },
+                              onWait: () => _startWaiting(
+                                BusRoute(
+                                  id: result.id,
+                                  name: result.name,
+                                  code: result.code,
+                                  company: result.companyName,
+                                  isActive: true,
+                                  geometry: result.geometry,
+                                ),
+                              ),
                             );
                           },
                         ),

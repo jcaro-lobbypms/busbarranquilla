@@ -12,10 +12,12 @@ import '../providers/favorites_provider.dart';
 class PlanResultCard extends ConsumerWidget {
   final PlanResult result;
   final VoidCallback onSelect;
+  final VoidCallback? onWait;
 
   const PlanResultCard({
     required this.result,
     required this.onSelect,
+    this.onWait,
     super.key,
   });
 
@@ -79,6 +81,14 @@ class PlanResultCard extends ConsumerWidget {
                 Text('${AppStrings.frequencyLabel}: ${result.frequencyMinutes} ${AppStrings.timeUnitMinutes}'),
               const SizedBox(height: 6),
               RouteActivityBadge(routeId: result.id),
+              if (onWait != null) ...<Widget>[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: onWait,
+                  icon: const Icon(Icons.notifications_active_outlined, size: 16),
+                  label: const Text(AppStrings.waitButton),
+                ),
+              ],
             ],
           ),
         ),

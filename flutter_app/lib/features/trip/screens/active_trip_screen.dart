@@ -34,6 +34,7 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen>
   bool _suspiciousDialogShown = false;
   bool _reportsExpanded = false;
   LatLng? _lastCenter;
+  bool _autoFollow = true;
 
   // Credit gain animation
   late final AnimationController _creditAnimController;
@@ -87,8 +88,9 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen>
     super.dispose();
   }
 
-  // Follow the user's GPS as it updates.
+  // Follow the user's GPS as it updates — only when auto-follow is enabled.
   void _followUser(LatLng position) {
+    if (!_autoFollow) return;
     if (_lastCenter == position) return;
     _lastCenter = position;
     try {
@@ -529,6 +531,11 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen>
             options: MapOptions(
               initialCenter: center,
               initialZoom: 17,
+              onPositionChanged: (_, hasGesture) {
+                if (hasGesture && _autoFollow) {
+                  setState(() => _autoFollow = false);
+                }
+              },
             ),
             children: <Widget>[
               TileLayer(
@@ -764,9 +771,17 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen>
                 const SizedBox(height: 8),
                 FloatingActionButton.small(
                   heroTag: 'recenter',
-                  backgroundColor: Colors.white,
-                  onPressed: () => _mapController.move(center, 17),
-                  child: const Icon(Icons.my_location, color: AppColors.primary),
+                  backgroundColor: _autoFollow ? Colors.white : AppColors.primary,
+                  onPressed: () {
+                    setState(() => _autoFollow = true);
+                    try {
+                      _mapController.move(center, _mapController.camera.zoom);
+                    } catch (_) {}
+                  },
+                  child: Icon(
+                    Icons.my_location,
+                    color: _autoFollow ? AppColors.primary : Colors.white,
+                  ),
                 ),
               ],
             ),
