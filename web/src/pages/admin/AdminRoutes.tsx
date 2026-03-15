@@ -691,6 +691,26 @@ export default function AdminRoutes() {
     return result;
   }
 
+  // Dense waypoints for erase mode — one point every ~spacingM meters (street-level granularity)
+  function extractDenseWaypoints(geometry: [number, number][], spacingM = 150): [number, number][] {
+    if (geometry.length <= 2) return [...geometry];
+    const result: [number, number][] = [geometry[0]];
+    let acc = 0;
+    for (let i = 1; i < geometry.length; i++) {
+      const dLat = (geometry[i][0] - geometry[i-1][0]) * Math.PI / 180;
+      const dLng = (geometry[i][1] - geometry[i-1][1]) * Math.PI / 180;
+      const a = Math.sin(dLat/2)**2 + Math.cos(geometry[i-1][0]*Math.PI/180)*Math.cos(geometry[i][0]*Math.PI/180)*Math.sin(dLng/2)**2;
+      acc += 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      if (acc >= spacingM) {
+        result.push(geometry[i]);
+        acc = 0;
+      }
+    }
+    const last = geometry[geometry.length - 1];
+    if (haversineM(result[result.length - 1], last) > 20) result.push(last);
+    return result;
+  }
+
   const snapAndUpdate = useCallback(async (wpts: [number, number][]) => {
     setSnapping(true);
     try {
@@ -2069,6 +2089,12 @@ export default function AdminRoutes() {
                               </div>
                               <button
                                 onClick={() => {
+                                  // Restore sparse waypoints for drawing mode
+                                  if (customGeometry && customGeometry.length >= 2) {
+                                    const sparseWpts = extractWaypoints(customGeometry);
+                                    setWaypoints(sparseWpts);
+                                    waypointsRef.current = sparseWpts;
+                                  }
                                   setIsSegEraseMode(false);
                                   isSegEraseModeRef.current = false;
                                 }}
@@ -2080,10 +2106,16 @@ export default function AdminRoutes() {
                           ) : (
                             <button
                               onClick={() => {
+                                // Densify waypoints to ~150m spacing so each erasable segment = one street block
+                                if (customGeometry && customGeometry.length >= 2) {
+                                  const denseWpts = extractDenseWaypoints(customGeometry, 150);
+                                  setWaypoints(denseWpts);
+                                  waypointsRef.current = denseWpts;
+                                }
                                 setIsSegEraseMode(true);
                                 isSegEraseModeRef.current = true;
                               }}
-                              disabled={snapping || !waypoints || waypoints.length < 2}
+                              disabled={snapping || !customGeometry || customGeometry.length < 2}
                               className="w-full text-xs bg-red-900/40 hover:bg-red-800/60 disabled:opacity-50 text-red-300 font-medium px-3 py-2 rounded-lg transition-colors border border-red-800/40"
                             >
                               🗑️ Borrar tramo — clic en la ruta
