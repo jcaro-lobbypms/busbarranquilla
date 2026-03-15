@@ -6,6 +6,7 @@ import { routeAlertsApi } from '../../services/api';
 const navItems = [
   { to: '/admin/stats', label: 'Dashboard', emoji: '📊' },
   { to: '/admin/users', label: 'Usuarios', emoji: '👥' },
+  { to: '/admin/routes', label: 'Rutas de bus', emoji: '🗺️' },
   { to: '/admin/buses', label: 'Buses', emoji: '🚍' },
   { to: '/admin/transmetro', label: 'Transmetro', emoji: '🚇' },
   { to: '/admin/companies', label: 'Empresas', emoji: '🏢' },
