@@ -750,9 +750,25 @@ export default function AdminRoutes() {
           );
           setLocatingStop(null);
         } else if (isEditingGeometryRef.current && !isSegEraseModeRef.current) {
-          // Geometry edit mode — add waypoint and snap to roads
+          // Geometry edit mode — insert waypoint at the best position in the sequence
+          // (between the two consecutive waypoints that minimize detour), not always at the end
           const newWpt: [number, number] = [e.latlng.lat, e.latlng.lng];
-          const newWaypoints = [...(waypointsRef.current ?? []), newWpt];
+          const current = waypointsRef.current ?? [];
+          let insertIdx = current.length; // default: append
+          if (current.length >= 2) {
+            const R = 6371000;
+            const dist = (a: [number,number], b: [number,number]) => {
+              const dLat = (b[0]-a[0])*Math.PI/180, dLng = (b[1]-a[1])*Math.PI/180;
+              const x = Math.sin(dLat/2)**2 + Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.sin(dLng/2)**2;
+              return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
+            };
+            let bestCost = Infinity;
+            for (let i = 0; i < current.length - 1; i++) {
+              const cost = dist(current[i], newWpt) + dist(newWpt, current[i+1]) - dist(current[i], current[i+1]);
+              if (cost < bestCost) { bestCost = cost; insertIdx = i + 1; }
+            }
+          }
+          const newWaypoints = [...current.slice(0, insertIdx), newWpt, ...current.slice(insertIdx)] as [number, number][];
           setWaypoints(newWaypoints);
           waypointsRef.current = newWaypoints;
           snapAndUpdate(newWaypoints);
