@@ -137,45 +137,48 @@ export async function parseRouteDescription(req: Request, res: Response): Promis
   // ── Step 1: Claude extracts 5-8 key turning points only ────────────────────
   // Fewer points = faster geocoding, OSRM fills the road-following path between them
   let intersections: string[] = [];
+  let claudeRaw = '';
   try {
     const message = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 512,
+      max_tokens: 700,
+      system: 'Eres un asistente de geocodificación. Responde ÚNICAMENTE con un array JSON válido de strings. Sin texto adicional, sin markdown, sin prefijos, sin explicaciones. Solo el array JSON puro empezando con [ y terminando con ].',
       messages: [
         {
           role: 'user',
           content: `Extrae los PUNTOS DE GIRO PRINCIPALES de esta descripción de ruta de bus en el Área Metropolitana de Barranquilla, Colombia (puede incluir Barranquilla, Soledad, Malambo o Puerto Colombia).
 ${geometryContext}
-REGLAS ESTRICTAS:
-- Máximo 8 puntos, mínimo 3
-- Solo donde el bus cambia de calle o avenida principal (giros reales, no cada intersección)
+REGLAS:
+- Entre 3 y 8 puntos (solo giros principales, no cada intersección)
 - Incluye punto de inicio y punto final
-- Formato exacto: "Carrera 5 con Calle 37, Barranquilla" — usa el nombre real de la calle según el municipio donde esté
-- Agrega el municipio al final de cada punto: "Carrera 5 con Calle 37, Barranquilla" o "Carrera 15 con Calle 30, Soledad"
-- NO inventes calles — usa los nombres exactos que aparecen en el texto
-- Responde SOLO con el array JSON
+- Formato de cada elemento: "Carrera 5 con Calle 37, Barranquilla" (intersection, Municipio)
+- Usa el municipio correcto según el contexto geográfico de arriba
+- NO inventes calles — usa los nombres exactos del texto
 
 Descripción:
-${text}
-
-Array JSON:`,
+${text}`,
         },
-        { role: 'assistant', content: '[' },
       ],
     });
 
-    const claudeText = message.content[0].type === 'text' ? message.content[0].text.trim() : '';
-    const raw = claudeText.startsWith('[') ? claudeText : '[' + claudeText;
-    const cleaned = raw.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+    claudeRaw = message.content[0].type === 'text' ? message.content[0].text.trim() : '';
+
+    // Extract JSON array from response — handles markdown fences, leading text, etc.
+    const cleaned = claudeRaw.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
     const match = cleaned.match(/\[[\s\S]*\]/);
     if (match) {
       try {
         const parsed = JSON.parse(match[0]) as unknown[];
         intersections = parsed.filter((x): x is string => typeof x === 'string' && x.length > 3);
       } catch {
+        // Fallback: extract all quoted strings
         const strings = cleaned.match(/"([^"]+)"/g);
         if (strings) intersections = strings.map(s => s.replace(/"/g, '')).filter(s => s.length > 3);
       }
+    } else {
+      // Last resort: extract all quoted strings from raw response
+      const strings = claudeRaw.match(/"([^"]+)"/g);
+      if (strings) intersections = strings.map(s => s.replace(/"/g, '')).filter(s => s.length > 3);
     }
   } catch (err) {
     res.status(500).json({ error: 'Error al llamar a la IA.', detail: String(err) });
@@ -183,7 +186,10 @@ Array JSON:`,
   }
 
   if (intersections.length === 0) {
-    res.status(422).json({ error: 'La IA no pudo extraer puntos de la descripción.' });
+    res.status(422).json({
+      error: 'La IA no pudo extraer puntos de la descripción.',
+      debug: claudeRaw.slice(0, 500), // show first 500 chars of Claude response for debugging
+    });
     return;
   }
 

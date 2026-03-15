@@ -573,8 +573,10 @@ export default function AdminRoutes() {
         setCustomGeometry(fullGeometry);
       }
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Error al interpretar con IA';
-      window.alert(msg);
+      const data = (err as { response?: { data?: { error?: string; debug?: string } } })?.response?.data;
+      const msg = data?.error ?? 'Error al interpretar con IA';
+      const debug = data?.debug ? `\n\nRespuesta IA: ${data.debug}` : '';
+      window.alert(msg + debug);
     } finally {
       setAiParsing(false);
     }
