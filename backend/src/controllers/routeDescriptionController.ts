@@ -4,7 +4,8 @@ import axios from 'axios';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const DELAY_MS = 1200;
+const DELAY_MS = 1000; // Nominatim requires ≥1s between requests
+const OVERPASS_CONCURRENCY = 4; // Overpass handles parallel queries fine
 const BQ_BBOX = '10.82,-74.98,11.08,-74.62';
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -81,20 +82,6 @@ async function geocodeViaNominatim(street1: string, street2: string): Promise<[n
   return null;
 }
 
-async function geocodeIntersection(intersection: string): Promise<[number, number] | null> {
-  const parts = intersection.split(/\s+con\s+/i);
-  if (parts.length !== 2) return null;
-  const [street1, street2] = parts.map(s => s.trim());
-
-  // Try Overpass first (most accurate — finds actual intersection node)
-  const overpassResult = await geocodeViaOverpass(street1, street2);
-  if (overpassResult) return overpassResult;
-
-  await sleep(DELAY_MS);
-
-  // Fallback: Nominatim with Colombian address formats
-  return geocodeViaNominatim(street1, street2);
-}
 
 export async function parseRouteDescription(req: Request, res: Response): Promise<void> {
   const { text } = req.body as { text?: string };
@@ -169,19 +156,38 @@ Array JSON:`,
     return;
   }
 
-  // ── Step 2: Geocode each intersection via Nominatim ────────────────────────
+  // ── Step 2: Geocode each intersection ──────────────────────────────────────
+  // Phase A: run Overpass in parallel batches (fast, accurate)
+  const parts = intersections.map(i => {
+    const p = i.split(/\s+con\s+/i);
+    return p.length === 2 ? [p[0].trim(), p[1].trim()] as [string, string] : null;
+  });
+
+  const overpassResults: ([number, number] | null)[] = new Array(intersections.length).fill(null);
+  for (let i = 0; i < intersections.length; i += OVERPASS_CONCURRENCY) {
+    const batch = parts.slice(i, i + OVERPASS_CONCURRENCY);
+    const batchResults = await Promise.all(
+      batch.map(p => p ? geocodeViaOverpass(p[0], p[1]) : Promise.resolve(null))
+    );
+    batchResults.forEach((r, j) => { overpassResults[i + j] = r; });
+  }
+
+  // Phase B: for Overpass misses, fallback to Nominatim sequentially (rate-limited)
   const waypoints: [number, number][] = [];
   const labels: string[] = [];
   const failed: string[] = [];
 
-  for (const intersection of intersections) {
-    await sleep(DELAY_MS);
-    const coords = await geocodeIntersection(intersection);
+  for (let i = 0; i < intersections.length; i++) {
+    let coords = overpassResults[i];
+    if (!coords && parts[i]) {
+      await sleep(DELAY_MS);
+      coords = await geocodeViaNominatim(parts[i]![0], parts[i]![1]);
+    }
     if (coords) {
       waypoints.push(coords);
-      labels.push(intersection);
+      labels.push(intersections[i]);
     } else {
-      failed.push(intersection);
+      failed.push(intersections[i]);
     }
   }
 
