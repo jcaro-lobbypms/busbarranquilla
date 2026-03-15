@@ -42,19 +42,18 @@ out 1;`;
   return null;
 }
 
-// Google Maps geocoding — uses city hint, validates result inside BQ metro bbox
+// Google Maps geocoding — tries city hint first, then all BQ metro municipalities
 async function geocodeViaGoogle(intersection: string, city: string): Promise<[number, number] | null> {
   const key = process.env.VITE_GOOGLE_MAPS_KEY;
   if (!key) return null;
-  const queries = [
-    `${intersection}, ${city}, Colombia`,
-    `${intersection}, Barranquilla, Colombia`,
-  ];
-  for (const q of queries) {
+  // Try the Claude-identified city first, then cover all municipalities
+  const allCities = [city, 'Barranquilla', 'Soledad', 'Malambo', 'Puerto Colombia'];
+  const cities = [...new Set(allCities)]; // deduplicate, keeping city first
+  for (const c of cities) {
     try {
       const res = await axios.get(
         'https://maps.googleapis.com/maps/api/geocode/json',
-        { params: { address: q, key, region: 'co' }, timeout: 5000 }
+        { params: { address: `${intersection}, ${c}, Colombia`, key, region: 'co' }, timeout: 5000 }
       );
       const results = (res.data as any).results as { geometry: { location: { lat: number; lng: number } } }[];
       if (results?.length > 0) {
@@ -101,8 +100,26 @@ async function geocodeViaNominatim(street1: string, street2: string, city = 'Bar
   return null;
 }
 
+// Build municipality context from existing geometry key points
+function buildGeometryContext(geometry: [number, number][]): string {
+  if (!geometry || geometry.length < 2) return '';
+  // Extract 6 evenly-spaced key points
+  const count = Math.min(6, geometry.length);
+  const pts: [number, number][] = [];
+  const step = (geometry.length - 1) / (count - 1);
+  for (let i = 0; i < count; i++) {
+    pts.push(geometry[Math.round(i * step)]);
+  }
+  // Simple heuristic: Soledad is roughly lat 10.87–10.96, Barranquilla lat 10.95–11.05 (overlap in between)
+  const labeled = pts.map((p, i) => {
+    const muni = p[0] < 10.93 ? 'Soledad' : p[0] > 10.98 ? 'Barranquilla' : 'zona límite Barranquilla/Soledad';
+    return `  ${i + 1}. lat=${p[0].toFixed(4)}, lng=${p[1].toFixed(4)} → aprox. ${muni}`;
+  });
+  return `\nContexto geográfico — la ruta ACTUAL pasa por estos puntos en orden:\n${labeled.join('\n')}\nUsa estas coordenadas para determinar el municipio correcto de cada intersección.\n`;
+}
+
 export async function parseRouteDescription(req: Request, res: Response): Promise<void> {
-  const { text } = req.body as { text?: string };
+  const { text, existingGeometry } = req.body as { text?: string; existingGeometry?: [number, number][] };
   if (!text || text.trim().length < 20) {
     res.status(400).json({ error: 'Texto demasiado corto' });
     return;
@@ -112,6 +129,10 @@ export async function parseRouteDescription(req: Request, res: Response): Promis
     res.status(500).json({ error: 'ANTHROPIC_API_KEY no configurada en el servidor' });
     return;
   }
+
+  const geometryContext = existingGeometry && existingGeometry.length >= 2
+    ? buildGeometryContext(existingGeometry)
+    : '';
 
   // ── Step 1: Claude extracts 5-8 key turning points only ────────────────────
   // Fewer points = faster geocoding, OSRM fills the road-following path between them
@@ -124,14 +145,14 @@ export async function parseRouteDescription(req: Request, res: Response): Promis
         {
           role: 'user',
           content: `Extrae los PUNTOS DE GIRO PRINCIPALES de esta descripción de ruta de bus en el Área Metropolitana de Barranquilla, Colombia (puede incluir Barranquilla, Soledad, Malambo o Puerto Colombia).
-
+${geometryContext}
 REGLAS ESTRICTAS:
 - Máximo 8 puntos, mínimo 3
 - Solo donde el bus cambia de calle o avenida principal (giros reales, no cada intersección)
 - Incluye punto de inicio y punto final
 - Formato exacto: "Carrera 5 con Calle 37, Barranquilla" — usa el nombre real de la calle según el municipio donde esté
 - Agrega el municipio al final de cada punto: "Carrera 5 con Calle 37, Barranquilla" o "Carrera 15 con Calle 30, Soledad"
-- NO corrijas ni normalices nombres de calles de Soledad a Barranquilla — mantenlos como aparecen
+- NO inventes calles — usa los nombres exactos que aparecen en el texto
 - Responde SOLO con el array JSON
 
 Descripción:

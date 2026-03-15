@@ -542,7 +542,8 @@ export default function AdminRoutes() {
     setAiDiff(null);
     try {
       // Step 1: Claude extracts 5-8 key anchor points, Overpass geocodes them (~3s)
-      const res = await routesApi.parseDescription(geocodeText);
+      const existingGeomForAI = customGeometry ?? osrmGeometry ?? undefined;
+      const res = await routesApi.parseDescription(geocodeText, existingGeomForAI);
       const { waypoints: anchorWps, labels, failed } = res.data as {
         waypoints: [number, number][];
         labels: string[];
