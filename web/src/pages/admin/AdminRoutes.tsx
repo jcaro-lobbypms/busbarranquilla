@@ -275,6 +275,10 @@ export default function AdminRoutes() {
     sameSegments: number;
   } | null>(null);
 
+  // Reference geometry shown as underlay during diff-edit and confirm modes
+  const [diffOriginalGeometry, setDiffOriginalGeometry] = useState<[number, number][] | null>(null);
+  const [diffConfirmMode, setDiffConfirmMode] = useState(false);
+
   // ── Map refs ────────────────────────────────────────────────────────────────
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -287,6 +291,7 @@ export default function AdminRoutes() {
   const waypointsRef = useRef<[number, number][] | null>(null);
   const refTrackLayersRef = useRef<L.Polyline[]>([]); // tracks de referencia GPS de reportantes
   const diffLayersRef = useRef<(L.Polyline | L.CircleMarker)[]>([]); // diff comparison overlay
+  const origGeomLayerRef = useRef<L.Polyline | null>(null); // reference underlay during adjust/confirm
   const autoOpenHandledRef = useRef(false); // evita re-abrir al recargar rutas
   const [refTracks, setRefTracks] = useState<{ user_name: string; geometry: [number, number][] }[]>([]);
   const [showRefTracks, setShowRefTracks] = useState(true);
@@ -454,6 +459,8 @@ export default function AdminRoutes() {
     setRefTracks([]);
     setAiDiff(null);
     setAiResult(null);
+    setDiffOriginalGeometry(null);
+    setDiffConfirmMode(false);
     sessionStorage.removeItem('admin_route_ref_tracks');
   }
 
@@ -573,6 +580,21 @@ export default function AdminRoutes() {
   }
 
   function discardAiDiff() {
+    setAiDiff(null);
+    setAiResult(null);
+  }
+
+  function enterAdjustMode() {
+    if (!aiDiff) return;
+    const origGeom = customGeometry ?? osrmGeometry;
+    setDiffOriginalGeometry(origGeom ?? null);
+    setGeomBeforeEdit(origGeom ?? null); // cancel in edit mode restores original
+    setCustomGeometry(aiDiff.newGeometry);
+    const wpts = extractWaypoints(aiDiff.newGeometry);
+    setWaypoints(wpts);
+    waypointsRef.current = wpts;
+    setIsEditingGeometry(true);
+    isEditingGeometryRef.current = true;
     setAiDiff(null);
     setAiResult(null);
   }
@@ -749,6 +771,7 @@ export default function AdminRoutes() {
       }
       diffLayersRef.current.forEach(l => l.remove());
       diffLayersRef.current = [];
+      if (origGeomLayerRef.current) { origGeomLayerRef.current.remove(); origGeomLayerRef.current = null; }
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
@@ -793,8 +816,8 @@ export default function AdminRoutes() {
       polylineRef.current = null;
     }
 
-    // Hide stop markers in geometry edit mode
-    if (isEditingGeometry) return;
+    // Hide stop markers in geometry edit mode, diff view and confirm mode
+    if (isEditingGeometry || !!aiDiff || diffConfirmMode) return;
 
     type ValidStop = Stop & { order: number; lat: number; lng: number };
     const validStops = stops
@@ -928,6 +951,18 @@ export default function AdminRoutes() {
     }
   }, [aiDiff, mapReady, customGeometry, osrmGeometry]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Reference geometry underlay (during diff-adjust and confirm) ───────────
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (origGeomLayerRef.current) { origGeomLayerRef.current.remove(); origGeomLayerRef.current = null; }
+    if (!map || !mapReady || !diffOriginalGeometry || diffOriginalGeometry.length < 2) return;
+    origGeomLayerRef.current = L.polyline(
+      diffOriginalGeometry.map(([lat, lng]) => [lat, lng] as L.LatLngTuple),
+      { color: '#94A3B8', weight: 3, opacity: 0.55, dashArray: '8,6' }
+    ).bindTooltip('Trazado anterior', { sticky: true }).addTo(map);
+  }, [diffOriginalGeometry, mapReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Render geometry on map ─────────────────────────────────────────────────
 
   useEffect(() => {
@@ -942,7 +977,7 @@ export default function AdminRoutes() {
       geomPolylineRef.current = null;
     }
 
-    if (isEditingGeometry && waypoints && waypoints.length >= 1) {
+    if (isEditingGeometry && !diffConfirmMode && waypoints && waypoints.length >= 1) {
       // Draggable orange waypoint markers — drag to snap to roads, click to delete
       waypoints.forEach(([lat, lng], idx) => {
         const icon = L.divIcon({
@@ -1700,15 +1735,21 @@ export default function AdminRoutes() {
                               </ul>
                             </details>
                           )}
-                          <div className="flex gap-2 pt-1">
-                            <button onClick={applyAiDiff}
-                              className="flex-1 bg-green-600 hover:bg-green-700 text-white font-medium text-xs px-2 py-1.5 rounded-lg transition-colors">
-                              ✅ Aplicar
+                          <div className="flex flex-col gap-1.5 pt-1">
+                            <button onClick={enterAdjustMode}
+                              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs px-2 py-2 rounded-lg transition-colors">
+                              ✏️ Ajustar en el mapa
                             </button>
-                            <button onClick={discardAiDiff}
-                              className="flex-1 bg-gray-600 hover:bg-gray-500 text-gray-200 font-medium text-xs px-2 py-1.5 rounded-lg transition-colors">
-                              ❌ Descartar
-                            </button>
+                            <div className="flex gap-1.5">
+                              <button onClick={applyAiDiff}
+                                className="flex-1 bg-green-700 hover:bg-green-600 text-white font-medium text-xs px-2 py-1.5 rounded-lg transition-colors">
+                                ✅ Aplicar
+                              </button>
+                              <button onClick={discardAiDiff}
+                                className="flex-1 bg-gray-600 hover:bg-gray-500 text-gray-200 font-medium text-xs px-2 py-1.5 rounded-lg transition-colors">
+                                ❌ Descartar
+                              </button>
+                            </div>
                           </div>
                         </div>
                       ) : aiResult && (
@@ -1862,12 +1903,34 @@ export default function AdminRoutes() {
                           >
                             🔄 Resetear a OSRM
                           </button>
+                          {diffOriginalGeometry && (
+                            <button
+                              onClick={() => {
+                                setIsEditingGeometry(false);
+                                isEditingGeometryRef.current = false;
+                                setWaypoints(null);
+                                waypointsRef.current = null;
+                                setDiffConfirmMode(true);
+                                // Fit map to show both routes
+                                const map = mapRef.current;
+                                if (map && customGeometry && customGeometry.length >= 2) {
+                                  const bounds = L.latLngBounds(customGeometry.map(([lat, lng]) => [lat, lng] as L.LatLngTuple));
+                                  map.fitBounds(bounds, { padding: [40, 40] });
+                                }
+                              }}
+                              disabled={snapping}
+                              className="w-full text-xs bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium px-3 py-2 rounded-lg transition-colors"
+                            >
+                              👁️ Previsualizar cambios
+                            </button>
+                          )}
                           <button
                             onClick={() => {
                               setCustomGeometry(geomBeforeEdit);
                               setIsEditingGeometry(false);
                               setWaypoints(null);
                               waypointsRef.current = null;
+                              setDiffOriginalGeometry(null);
                             }}
                             className="w-full text-xs bg-gray-700 hover:bg-gray-600 text-gray-400 font-medium px-3 py-2 rounded-lg transition-colors"
                           >
@@ -1918,6 +1981,50 @@ export default function AdminRoutes() {
 
                   {/* ── Right panel — Leaflet map ────────────────────────── */}
                   <div className="flex-1 relative">
+                    {/* Confirmation overlay */}
+                    {diffConfirmMode && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-end pb-8 pointer-events-none" style={{ zIndex: 1000 }}>
+                        <div className="bg-gray-900/95 border border-gray-600 rounded-2xl shadow-2xl p-5 mx-6 pointer-events-auto w-full max-w-sm">
+                          <p className="font-semibold text-white text-sm mb-1">👁️ Previsualización del trazado</p>
+                          <div className="flex gap-4 text-xs text-gray-400 mb-4">
+                            <span className="flex items-center gap-1.5">
+                              <span className="inline-block w-5 h-0.5 bg-gray-400 opacity-60" style={{ borderTop: '2px dashed #94A3B8', background: 'none' }}></span>
+                              Trazado anterior
+                            </span>
+                            <span className="flex items-center gap-1.5">
+                              <span className="inline-block w-5 h-0.5 bg-green-400 rounded-full" style={{ height: 3 }}></span>
+                              Trazado nuevo
+                            </span>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                setDiffConfirmMode(false);
+                                setDiffOriginalGeometry(null);
+                              }}
+                              className="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold text-sm px-3 py-2.5 rounded-xl transition-colors"
+                            >
+                              ✅ Confirmar trazado
+                            </button>
+                            <button
+                              onClick={() => {
+                                setDiffConfirmMode(false);
+                                // Re-enter edit mode with current geometry
+                                const wpts = customGeometry ? extractWaypoints(customGeometry) : [];
+                                setWaypoints(wpts);
+                                waypointsRef.current = wpts;
+                                setIsEditingGeometry(true);
+                                isEditingGeometryRef.current = true;
+                              }}
+                              className="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-200 font-medium text-sm px-3 py-2.5 rounded-xl transition-colors"
+                            >
+                              ◀ Editar
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Geometry edit mode banner */}
                     {isEditingGeometry && (
                       <div className="absolute top-0 left-0 right-0 bg-blue-600 text-white text-sm font-medium px-4 py-2 flex items-center justify-between" style={{ zIndex: 1000 }}>
