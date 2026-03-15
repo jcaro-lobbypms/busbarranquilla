@@ -172,7 +172,7 @@ Array JSON:`,
   const failed: string[] = [];
 
   for (const intersection of intersections) {
-    await sleep(NOMINATIM_DELAY_MS);
+    await sleep(DELAY_MS);
     const coords = await geocodeIntersection(intersection);
     if (coords) {
       waypoints.push(coords);
