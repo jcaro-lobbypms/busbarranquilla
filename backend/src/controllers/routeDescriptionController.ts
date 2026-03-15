@@ -4,29 +4,93 @@ import axios from 'axios';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const NOMINATIM_DELAY_MS = 1100; // Nominatim: max 1 req/s
+const DELAY_MS = 1200;
+const BQ_BBOX = '10.82,-74.98,11.08,-74.62';
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-interface NominatimResult {
-  lat: string;
-  lon: string;
-  display_name: string;
+// Normalize Colombian street names for Overpass regex matching
+// "Carrera 5" → regex that matches "Carrera 5", "Cra. 5", "CRA 5", "Cr 5", etc.
+function streetRegex(name: string): string {
+  return name
+    .replace(/^Carrera\s+/i,  '(Carrera|Cra\\.?|CRA|Cr\\.?)\\s*')
+    .replace(/^Calle\s+/i,    '(Calle|Cl\\.?|CL)\\s*')
+    .replace(/^Diagonal\s+/i, '(Diagonal|Diag\\.?|Dg\\.?)\\s*')
+    .replace(/^Transversal\s+/i, '(Transversal|Tv\\.?|TV)\\s*')
+    .replace(/^Avenida\s+/i,  '(Avenida|Av\\.?|AV)\\s*')
+    .replace(/^Vía\s+/i,      '(Vía|Via)\\s*')
+    // append word boundary anchor for the number portion
+    + '$';
+}
+
+// Primary: Overpass API — finds the actual intersection node in OSM
+async function geocodeViaOverpass(street1: string, street2: string): Promise<[number, number] | null> {
+  const r1 = streetRegex(street1);
+  const r2 = streetRegex(street2);
+  const query = `[out:json][timeout:20][bbox:${BQ_BBOX}];
+way["name"~"${r1}",i]["highway"]->.s1;
+way["name"~"${r2}",i]["highway"]->.s2;
+node(w.s1)(w.s2);
+out 1;`;
+
+  try {
+    const res = await axios.post<{ elements: { lat: number; lon: number }[] }>(
+      'https://overpass-api.de/api/interpreter',
+      query,
+      { headers: { 'Content-Type': 'text/plain' }, timeout: 25000 }
+    );
+    if (res.data.elements.length > 0) {
+      const el = res.data.elements[0];
+      return [el.lat, el.lon];
+    }
+  } catch { /* fall through */ }
+  return null;
+}
+
+// Fallback: Nominatim with multiple Colombian address formats
+async function geocodeViaNominatim(street1: string, street2: string): Promise<[number, number] | null> {
+  // Extract number from street name (e.g. "Calle 37" → "37", "Calle 26A" → "26A")
+  const numMatch = street2.match(/[\dA-Za-z]+$/);
+  const num = numMatch ? numMatch[0] : '';
+
+  const queries = [
+    `${street1} #${num}, Barranquilla, Colombia`,
+    `${street1} ${num}, Barranquilla, Colombia`,
+    `${street1} y ${street2}, Barranquilla, Colombia`,
+    `${street1}, Barranquilla, Colombia`,
+  ];
+
+  for (const q of queries) {
+    try {
+      await sleep(DELAY_MS);
+      const res = await axios.get<{ lat: string; lon: string }[]>(
+        'https://nominatim.openstreetmap.org/search',
+        {
+          params: { q, format: 'json', limit: 1, bounded: 1, viewbox: '-74.98,11.08,-74.62,10.82' },
+          headers: { 'User-Agent': 'co.mibus.admin/1.0' },
+          timeout: 10000,
+        }
+      );
+      if (res.data.length > 0) {
+        return [parseFloat(res.data[0].lat), parseFloat(res.data[0].lon)];
+      }
+    } catch { /* try next format */ }
+  }
+  return null;
 }
 
 async function geocodeIntersection(intersection: string): Promise<[number, number] | null> {
-  try {
-    const query = `${intersection}, Barranquilla, Colombia`;
-    const res = await axios.get<NominatimResult[]>('https://nominatim.openstreetmap.org/search', {
-      params: { q: query, format: 'json', limit: 1, bounded: 1, viewbox: '-74.98,11.08,-74.62,10.82' },
-      headers: { 'User-Agent': 'co.mibus.admin/1.0' },
-    });
-    if (res.data.length > 0) {
-      return [parseFloat(res.data[0].lat), parseFloat(res.data[0].lon)];
-    }
-    return null;
-  } catch {
-    return null;
-  }
+  const parts = intersection.split(/\s+con\s+/i);
+  if (parts.length !== 2) return null;
+  const [street1, street2] = parts.map(s => s.trim());
+
+  // Try Overpass first (most accurate — finds actual intersection node)
+  const overpassResult = await geocodeViaOverpass(street1, street2);
+  if (overpassResult) return overpassResult;
+
+  await sleep(DELAY_MS);
+
+  // Fallback: Nominatim with Colombian address formats
+  return geocodeViaNominatim(street1, street2);
 }
 
 export async function parseRouteDescription(req: Request, res: Response): Promise<void> {
