@@ -310,4 +310,14 @@ abstract final class AppStrings {
   static const waitingEtaMinutes = 'min';
   static const waitingActiveBar = '🔔 Esperando bus';
   static const waitingBusNearTitle = 'Tu bus está cerca';
+
+  // Help / Guide
+  static const helpTitle = 'Cómo usar MiBus';
+  static const helpSubtitle = 'Aprende a sacarle el máximo provecho a la app';
+  static const helpMenuLabel = 'Ayuda y guía';
+  static const helpMapTitle = 'La pestaña Mapa';
+  static const helpPlannerTitle = 'La pestaña Mis Rutas';
+  static const helpTripTitle = 'Cómo funciona "Me subí"';
+  static const helpCreditsTitle = 'Sistema de créditos';
+  static const helpPremiumTitle = 'MiBus Premium';
 }

@@ -16,6 +16,7 @@ import 'features/map/screens/map_pick_screen.dart';
 import 'features/map/screens/map_screen.dart';
 import 'features/planner/screens/planner_screen.dart';
 import 'features/profile/screens/credits_history_screen.dart';
+import 'features/profile/screens/help_screen.dart';
 import 'features/profile/screens/profile_screen.dart';
 import 'features/profile/screens/trip_history_screen.dart';
 import 'features/shell/main_shell.dart';
@@ -120,6 +121,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/profile/trips',
         builder: (BuildContext context, GoRouterState state) => const TripHistoryScreen(),
+      ),
+      GoRoute(
+        path: '/profile/help',
+        builder: (BuildContext context, GoRouterState state) => const HelpScreen(),
       ),
       GoRoute(
         path: '/map-pick',

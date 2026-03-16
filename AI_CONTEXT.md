@@ -646,6 +646,7 @@ Vibration.vibrate(
 - **Historial de viajes rediseñado**: barra de resumen (viajes + créditos + tiempo) con fondo `primaryDark`; cards con borde izquierdo en color de ruta; fechas relativas ("Hoy", "Ayer", día de semana); créditos con ícono moneda dorado
 - **CreditHistoryTile rediseñado**: íconos semánticos por tipo de transacción (bus/viaje, reporte, regalo/bono, alerta, referido); contenedor con color de fondo suave; monto con mayor peso tipográfico
 - **PremiumCard**: lista de beneficios no-premium ahora muestra `Icons.check_circle_rounded` antes de cada feature
+- **Pantalla de ayuda in-app (`HelpScreen`)**: accesible desde Perfil → "Ayuda y guía"; ruta `/profile/help`; 5 secciones expandibles (Mapa, Mis Rutas, Me subí, Créditos, Premium) con preguntas frecuentes tipo FAQ; diseño con `CustomScrollBar` + `SliverAppBar` + cards con borde izquierdo de color por sección; `ExpansionTile` por cada pregunta; strings en `AppStrings` (helpTitle, helpMenuLabel, helpMapTitle, helpPlannerTitle, helpTripTitle, helpCreditsTitle, helpPremiumTitle)
 
 ### Pendiente 🚧
 - Publicación en Google Play (requiere SHA-1 Firebase + signing config en release build)
@@ -850,4 +851,4 @@ Cuando el usuario está en `BoardingScreen` y toca `RoutePreviewSheet`, puede el
 
 ---
 
-*Última actualización: 2026-03-15 (v23)*
+*Última actualización: 2026-03-16 (v24)*

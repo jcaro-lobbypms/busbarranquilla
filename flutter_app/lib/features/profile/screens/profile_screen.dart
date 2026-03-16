@@ -213,6 +213,13 @@ class _ProfileReadyView extends ConsumerWidget {
                           onTap: () => context.push('/profile/trips'),
                         ),
                         const Divider(height: 1, indent: 56, endIndent: 16),
+                        _MenuTile(
+                          icon: Icons.help_outline_rounded,
+                          iconColor: const Color(0xFF7C3AED),
+                          title: AppStrings.helpMenuLabel,
+                          onTap: () => context.push('/profile/help'),
+                        ),
+                        const Divider(height: 1, indent: 56, endIndent: 16),
                         _ReferralTile(user: user, context: context),
                       ],
                     ),
