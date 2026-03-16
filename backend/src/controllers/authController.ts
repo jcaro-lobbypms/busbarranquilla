@@ -320,7 +320,8 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
   try {
     const result = await pool.query(
       `SELECT id, name, email, phone, credits, role, is_premium, is_active,
-              trial_expires_at, premium_expires_at, reputation, created_at
+              trial_expires_at, premium_expires_at, reputation, created_at,
+              referral_code, fcm_token, notification_prefs
        FROM users WHERE id = $1`,
       [(req as any).userId]
     );
@@ -330,7 +331,13 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    res.json({ user: result.rows[0] });
+    const userRow = result.rows[0] as Record<string, unknown>;
+    res.json({
+      user: {
+        ...userRow,
+        notification_prefs: userRow.notification_prefs ?? {},
+      },
+    });
 
   } catch (error) {
     console.error('Error obteniendo perfil:', error);
@@ -355,6 +362,26 @@ export const updateFcmToken = async (req: Request, res: Response): Promise<void>
     console.error('Error actualizando fcm_token:', error);
     res.status(500).json({ message: 'Error interno del servidor' });
   }
+};
+
+export const updateNotificationPrefs = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  const userId = (req as any).userId;
+  const { notification_prefs } = req.body as { notification_prefs?: unknown };
+
+  if (typeof notification_prefs !== 'object' || notification_prefs === null) {
+    res.status(400).json({ error: 'notification_prefs must be an object' });
+    return;
+  }
+
+  await pool.query(
+    'UPDATE users SET notification_prefs = $1 WHERE id = $2',
+    [JSON.stringify(notification_prefs), userId],
+  );
+
+  res.json({ message: 'Preferencias de notificaciones actualizadas' });
 };
 
 // Actualizar perfil básico del usuario autenticado

@@ -647,6 +647,7 @@ Vibration.vibrate(
 - **CreditHistoryTile rediseñado**: íconos semánticos por tipo de transacción (bus/viaje, reporte, regalo/bono, alerta, referido); contenedor con color de fondo suave; monto con mayor peso tipográfico
 - **PremiumCard**: lista de beneficios no-premium ahora muestra `Icons.check_circle_rounded` antes de cada feature
 - **Pantalla de ayuda in-app (`HelpScreen`)**: accesible desde Perfil → "Ayuda y guía"; ruta `/profile/help`; 5 secciones expandibles (Mapa, Mis Rutas, Me subí, Créditos, Premium) con preguntas frecuentes tipo FAQ; diseño con `CustomScrollBar` + `SliverAppBar` + cards con borde izquierdo de color por sección; `ExpansionTile` por cada pregunta; strings en `AppStrings` (helpTitle, helpMenuLabel, helpMapTitle, helpPlannerTitle, helpTripTitle, helpCreditsTitle, helpPremiumTitle)
+- **Sistema de preferencias de notificaciones (spec 34)**: columna `notification_prefs JSONB DEFAULT '{}'` en `users`; endpoint `PATCH /api/auth/notification-prefs` (auth); modelo `NotificationPrefs` en Flutter con campos nullable (`busNearby`, `boardingAlerts`, `routeReports`) — `null` = nunca configurado, `true/false` = preferencia guardada; diálogo opt-in primera vez por tipo (`notification_opt_in_dialog.dart`); sección "Notificaciones" en `ProfileScreen` con 3 toggles; alerta "bus cercano" cobra **3 créditos** a usuarios free (premium/admin gratis); lógica en `_handleBusNearbyNotification()` en `map_screen.dart`
 
 ### Pendiente 🚧
 - Publicación en Google Play (requiere SHA-1 Firebase + signing config en release build)
@@ -851,4 +852,4 @@ Cuando el usuario está en `BoardingScreen` y toca `RoutePreviewSheet`, puede el
 
 ---
 
-*Última actualización: 2026-03-16 (v24)*
+*Última actualización: 2026-03-16 (v25)*

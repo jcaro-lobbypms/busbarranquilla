@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../../core/data/repositories/auth_repository.dart';
+import '../../../core/domain/models/notification_prefs.dart';
 import '../../../core/error/result.dart';
 import '../../../core/l10n/strings.dart';
 import '../../../core/notifications/notification_service.dart';
@@ -101,6 +102,19 @@ class AuthNotifier extends Notifier<AuthState> {
     } catch (_) {
       state = const AuthErrorState(AppStrings.googleSignInError);
     }
+  }
+
+  /// Persists notification preferences to the backend and updates local auth state.
+  Future<void> updateNotificationPrefs(Map<String, dynamic> prefs) async {
+    if (state is! Authenticated) return;
+    final current = state as Authenticated;
+    // Optimistic update
+    final updated = current.user.copyWith(
+      notificationPrefs: NotificationPrefs.fromJson(prefs),
+    );
+    state = Authenticated(updated);
+    // Persist
+    await ref.read(authRepositoryProvider).updateNotificationPrefs(prefs);
   }
 
   Future<void> _refreshFromProfile() async {

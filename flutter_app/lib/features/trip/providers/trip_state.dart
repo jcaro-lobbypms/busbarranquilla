@@ -29,8 +29,14 @@ final class TripActive extends TripState {
   final bool showDesvioEscalate;
   final bool desvioEscalateIsTranscon;
   final bool dropoffPrompt;
+  /// When true the screen skips the payment-confirmation dialog and goes
+  /// straight to the destination picker (used when boardingAlerts pref is
+  /// already enabled and no destination was pre-selected).
+  final bool dropoffAutoPickDestination;
   final bool showSuspiciousModal;
   final String? reportError;
+  /// Non-error informational message (shown as info snackbar, then cleared).
+  final String? infoMessage;
   final bool gpsLost;
   final String? occupancyState;
 
@@ -46,8 +52,10 @@ final class TripActive extends TripState {
     this.showDesvioEscalate = false,
     this.desvioEscalateIsTranscon = false,
     this.dropoffPrompt = false,
+    this.dropoffAutoPickDestination = false,
     this.showSuspiciousModal = false,
     this.reportError,
+    this.infoMessage,
     this.gpsLost = false,
     this.occupancyState,
   });
@@ -65,9 +73,12 @@ final class TripActive extends TripState {
     bool? showDesvioEscalate,
     bool? desvioEscalateIsTranscon,
     bool? dropoffPrompt,
+    bool? dropoffAutoPickDestination,
     bool? showSuspiciousModal,
     String? reportError,
     bool clearReportError = false,
+    String? infoMessage,
+    bool clearInfoMessage = false,
     bool? gpsLost,
     String? occupancyState,
     bool clearOccupancyState = false,
@@ -84,8 +95,10 @@ final class TripActive extends TripState {
       showDesvioEscalate: showDesvioEscalate ?? this.showDesvioEscalate,
       desvioEscalateIsTranscon: desvioEscalateIsTranscon ?? this.desvioEscalateIsTranscon,
       dropoffPrompt: dropoffPrompt ?? this.dropoffPrompt,
+      dropoffAutoPickDestination: dropoffAutoPickDestination ?? this.dropoffAutoPickDestination,
       showSuspiciousModal: showSuspiciousModal ?? this.showSuspiciousModal,
       reportError: clearReportError ? null : (reportError ?? this.reportError),
+      infoMessage: clearInfoMessage ? null : (infoMessage ?? this.infoMessage),
       gpsLost: gpsLost ?? this.gpsLost,
       occupancyState: clearOccupancyState ? null : (occupancyState ?? this.occupancyState),
     );

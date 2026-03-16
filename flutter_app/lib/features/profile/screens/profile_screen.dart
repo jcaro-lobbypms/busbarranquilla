@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart' show Share;
 
+import '../../../core/domain/models/notification_prefs.dart';
 import '../../../core/domain/models/user.dart';
 import '../../../core/l10n/strings.dart';
 import '../../../core/theme/app_colors.dart';
@@ -227,6 +228,11 @@ class _ProfileReadyView extends ConsumerWidget {
 
                   const SizedBox(height: 12),
 
+                  // ── Notification preferences ─────────────────────
+                  _NotificationsSection(user: user),
+
+                  const SizedBox(height: 12),
+
                   // ── Premium card ────────────────────────────────────
                   PremiumCard(user: user),
 
@@ -408,6 +414,125 @@ class _HeaderChip extends StatelessWidget {
           fontWeight: FontWeight.w700,
         ),
       ),
+    );
+  }
+}
+
+class _NotificationsSection extends ConsumerWidget {
+  final User user;
+  const _NotificationsSection({required this.user});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final prefs = user.notificationPrefs ?? const NotificationPrefs();
+    final isPremium = user.hasActivePremium || user.role == 'admin';
+
+    Future<void> toggle(String key, bool newValue) async {
+      final merged = <String, dynamic>{
+        ...prefs.toJson(),
+        key: newValue,
+      };
+      await ref.read(authNotifierProvider.notifier).updateNotificationPrefs(merged);
+      if (context.mounted) {
+        AppSnackbar.show(context, AppStrings.notifSavedSnackbar, SnackbarType.success);
+      }
+    }
+
+    return _SectionCard(
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 14, 16, 6),
+            child: Text(
+              AppStrings.notifSectionTitle,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textSecondary,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+          _NotifTile(
+            icon: Icons.directions_bus_rounded,
+            iconColor: AppColors.primary,
+            label: AppStrings.notifBusNearbyLabel,
+            subtitle: isPremium
+                ? AppStrings.notifPremiumFree
+                : AppStrings.notifBusNearbySub,
+            value: prefs.busNearby ?? false,
+            onChanged: (v) => toggle('bus_nearby', v),
+          ),
+          const Divider(height: 1, indent: 56, endIndent: 16),
+          _NotifTile(
+            icon: Icons.location_on_rounded,
+            iconColor: const Color(0xFF059669),
+            label: AppStrings.notifBoardingLabel,
+            subtitle: isPremium
+                ? AppStrings.notifPremiumFree
+                : AppStrings.notifBoardingSub,
+            value: prefs.boardingAlerts ?? false,
+            onChanged: (v) => toggle('boarding_alerts', v),
+          ),
+          const Divider(height: 1, indent: 56, endIndent: 16),
+          _NotifTile(
+            icon: Icons.notifications_rounded,
+            iconColor: AppColors.accent,
+            label: AppStrings.notifRouteReportsLabel,
+            subtitle: AppStrings.notifRouteReportsSub,
+            value: prefs.routeReports ?? false,
+            onChanged: (v) => toggle('route_reports', v),
+          ),
+          const SizedBox(height: 6),
+        ],
+      ),
+    );
+  }
+}
+
+class _NotifTile extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _NotifTile({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SwitchListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      secondary: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: iconColor.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(9),
+        ),
+        child: Icon(icon, color: iconColor, size: 20),
+      ),
+      title: Text(
+        label,
+        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+      ),
+      value: value,
+      activeThumbColor: AppColors.primary,
+      onChanged: onChanged,
     );
   }
 }

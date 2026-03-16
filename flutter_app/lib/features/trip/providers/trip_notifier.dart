@@ -12,6 +12,7 @@ import '../../../core/data/repositories/stops_repository.dart';
 import '../../../core/data/repositories/trips_repository.dart';
 import '../../auth/providers/auth_notifier.dart';
 import '../../auth/providers/auth_state.dart';
+import '../../profile/providers/profile_notifier.dart';
 import '../../../core/domain/models/active_trip.dart';
 import '../../../core/domain/models/trip_end_result.dart';
 import '../../../core/domain/models/bus_route.dart';
@@ -470,7 +471,10 @@ class TripNotifier extends Notifier<TripState> {
     return 'ok';
   }
 
-  Future<void> activateDropoffAlerts() async {
+  /// [autoActivated] — true when called automatically because the user already
+  /// has boardingAlerts enabled in their notification preferences.
+  /// Shows a success info snackbar instead of requiring a dialog confirmation.
+  Future<void> activateDropoffAlerts({bool autoActivated = false}) async {
     if (state is! TripActive) return;
 
     final creditResult = await ref.read(creditsRepositoryProvider).spend(<String, dynamic>{
@@ -478,11 +482,19 @@ class TripNotifier extends Notifier<TripState> {
       'description': 'Alertas de bajada',
     });
     if (creditResult is Failure) {
-      state = (state as TripActive).copyWith(dropoffPrompt: false);
+      state = (state as TripActive).copyWith(
+        dropoffPrompt: false,
+        reportError: AppStrings.dropoffNoCredits,
+      );
       return;
     }
 
-    state = (state as TripActive).copyWith(dropoffPrompt: false);
+    _refreshBalance();
+
+    state = (state as TripActive).copyWith(
+      dropoffPrompt: false,
+      infoMessage: autoActivated ? AppStrings.dropoffAutoActivated : null,
+    );
 
     if (_pendingDropoffDestination != null && state is TripActive) {
       final active = state as TripActive;
@@ -512,7 +524,15 @@ class TripNotifier extends Notifier<TripState> {
         'amount': 5,
         'description': 'Alertas de bajada',
       });
-      if (creditResult is Failure) return;
+      if (creditResult is Failure) {
+        if (state is TripActive) {
+          state = (state as TripActive).copyWith(
+            reportError: AppStrings.dropoffNoCredits,
+          );
+        }
+        return;
+      }
+      _refreshBalance();
     }
 
     if (state is! TripActive) return;
@@ -555,7 +575,14 @@ class TripNotifier extends Notifier<TripState> {
       'amount': 5,
       'description': 'Alertas de bajada',
     });
-    if (creditResult is Failure) return;
+    if (creditResult is Failure) {
+      state = (state as TripActive).copyWith(
+        reportError: AppStrings.dropoffNoCredits,
+      );
+      return;
+    }
+
+    _refreshBalance();
 
     if (state is! TripActive) return;
     final active = state as TripActive;
@@ -663,6 +690,24 @@ class TripNotifier extends Notifier<TripState> {
     if (state is TripActive) {
       state = (state as TripActive).copyWith(clearReportError: true);
     }
+  }
+
+  void clearInfoMessage() {
+    if (state is TripActive) {
+      state = (state as TripActive).copyWith(clearInfoMessage: true);
+    }
+  }
+
+  void clearDropoffAutoPickDestination() {
+    if (state is TripActive) {
+      state = (state as TripActive).copyWith(dropoffAutoPickDestination: false);
+    }
+  }
+
+  /// Refreshes the credit balance shown in the profile screen.
+  /// Called after every successful credit spend so the balance is always current.
+  void _refreshBalance() {
+    unawaited(ref.read(profileNotifierProvider.notifier).refreshBalance());
   }
 
   void _bindSocketRouteListeners(int routeId) {
@@ -776,6 +821,8 @@ class TripNotifier extends Notifier<TripState> {
     final authState = ref.read(authNotifierProvider);
     final isPremium = authState is Authenticated &&
         (authState.user.hasActivePremium || authState.user.role == 'admin');
+    final prefs = authState is Authenticated ? authState.user.notificationPrefs : null;
+    final boardingAlertsEnabled = prefs?.boardingAlerts == true;
 
     if (destinationStopId != null) {
       Stop? destination;
@@ -788,15 +835,25 @@ class TripNotifier extends Notifier<TripState> {
       if (destination != null) {
         if (isPremium) {
           _startDropoffMonitor(destination, activeState.stops);
+        } else if (boardingAlertsEnabled) {
+          // User already agreed to pay in a previous trip — charge and activate
+          // automatically without showing the confirmation dialog.
+          _pendingDropoffDestination = destination;
+          unawaited(activateDropoffAlerts(autoActivated: true));
         } else {
           state = (state as TripActive).copyWith(dropoffPrompt: true);
           _pendingDropoffDestination = destination;
         }
       }
     } else if (!isPremium) {
-      // Free users without a pre-selected destination still get the prompt
-      // so they can choose a stop and activate alerts.
-      state = (state as TripActive).copyWith(dropoffPrompt: true);
+      if (boardingAlertsEnabled) {
+        // Preference is on but no destination selected yet — skip the payment
+        // confirmation dialog and go straight to destination picker.
+        state = (state as TripActive).copyWith(dropoffAutoPickDestination: true);
+      } else {
+        // Free users without preference: show full prompt (pay + pick destination).
+        state = (state as TripActive).copyWith(dropoffPrompt: true);
+      }
     }
 
     _inactivityMonitor = InactivityMonitor(

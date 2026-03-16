@@ -1001,9 +1001,10 @@ User votes that the bus route has changed or is stuck. ≥3 `ruta_real` votes tr
 - **Paleta "Profesional Atardecer"** — `app_colors.dart`: `primary #1A5080`, `primaryDark #0B2F52`, `accent #E7B342`, `error #CD1C2B`, `background #F5F7FA`; `app_theme.dart`: navigation bar azul oscuro con iconos/labels dorados, input borders redondeados, focus en `primary`
 - **Cards con borde izquierdo dinámico** — "Cerca de ti" (`boarding_screen.dart`), favoritos y "Buses en tu zona" (`planner_screen.dart`): fondo blanco + sombra suave + borde izquierdo 4px en `AppColors.forRouteCode(route.code)` (misma color que el badge del código de ruta)
 - **Alerta de bajada — selección en mapa** — cuando usuario acepta sin destino: `_pickDestinationOnMap()` abre `MapPickScreen` (crosshair + reverse geocode) en vez de lista de paradas; `TripNotifier.setDestinationByLatLng(lat, lng, label)` crea `Stop` sintético `id: -1` para `DropoffMonitor`; premium/admin no pagan 5 créditos
+- **Preferencias de notificaciones (spec 34)** — `NotificationPrefs` model (`busNearby`, `boardingAlerts`, `routeReports`, todos nullable); columna `notification_prefs JSONB` en `users`; `PATCH /api/auth/notification-prefs`; diálogo opt-in primera vez por tipo; sección "Notificaciones" en `ProfileScreen` con 3 toggles; alerta bus cercano cobra 3 créditos a free users
 
 **Pending (Flutter):**
-- Firebase push notifications (flutter_local_notifications already installed)
+- Firebase push notifications para `boardingAlerts` y `routeReports` cuando el app está cerrado (busNearby ya funciona con app en background)
 - Google Play publishing (requires google-services.json + SHA-1 Firebase setup)
 - Wompi in-app payment flow (currently opens browser)
 - Alliance with AMB and SIBUS Barranquilla

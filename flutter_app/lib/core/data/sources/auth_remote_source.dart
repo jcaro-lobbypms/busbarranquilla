@@ -43,4 +43,11 @@ class AuthRemoteSource {
       data: <String, dynamic>{'fcm_token': token},
     );
   }
+
+  Future<void> updateNotificationPrefs(Map<String, dynamic> prefs) async {
+    await _dio.patch(
+      ApiPaths.authNotificationPrefs,
+      data: <String, dynamic>{'notification_prefs': prefs},
+    );
+  }
 }

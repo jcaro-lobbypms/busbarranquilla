@@ -96,6 +96,10 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen>
       if (s is TripActive && s.dropoffPrompt) {
         _showDropoffPrompt();
       }
+      if (s is TripActive && s.dropoffAutoPickDestination) {
+        ref.read(tripNotifierProvider.notifier).clearDropoffAutoPickDestination();
+        _pickDestinationOnMap(ref.read(tripNotifierProvider.notifier));
+      }
     });
   }
 
@@ -536,6 +540,24 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen>
           if (mounted) {
             AppSnackbar.show(context, next.reportError!, SnackbarType.error);
             ref.read(tripNotifierProvider.notifier).clearReportError();
+          }
+        });
+      }
+
+      if (next.infoMessage != null && prev?.infoMessage != next.infoMessage) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            AppSnackbar.show(context, next.infoMessage!, SnackbarType.info);
+            ref.read(tripNotifierProvider.notifier).clearInfoMessage();
+          }
+        });
+      }
+
+      if (next.dropoffAutoPickDestination && prev?.dropoffAutoPickDestination != true) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ref.read(tripNotifierProvider.notifier).clearDropoffAutoPickDestination();
+            _pickDestinationOnMap(ref.read(tripNotifierProvider.notifier));
           }
         });
       }

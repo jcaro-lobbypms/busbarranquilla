@@ -93,6 +93,19 @@ class ProfileNotifier extends Notifier<ProfileState> {
     );
   }
 
+  /// Refreshes only the credit balance without resetting the loading state.
+  /// Called by trip and map screens after spending credits to keep the
+  /// profile balance in sync without a full page reload.
+  Future<void> refreshBalance() async {
+    final current = state;
+    if (current is! ProfileReady) return;
+
+    final balanceResult = await ref.read(creditsRepositoryProvider).getBalance();
+    if (balanceResult is Success<CreditTransaction>) {
+      state = current.copyWith(balance: balanceResult.data.amount);
+    }
+  }
+
   User? get _authUser {
     final authState = ref.read(authNotifierProvider);
     return switch (authState) {

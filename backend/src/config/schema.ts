@@ -293,6 +293,11 @@ const createTables = async () => {
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token TEXT DEFAULT NULL`);
     console.log('✅ Columna fcm_token en users');
 
+    await pool.query(`
+      ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS notification_prefs JSONB DEFAULT '{}'
+    `);
+
     // Destino personalizado (mapa): cuando el usuario pica un punto libre en vez de una parada
     await pool.query(`ALTER TABLE active_trips ADD COLUMN IF NOT EXISTS custom_destination_lat DECIMAL(10,8) DEFAULT NULL`);
     await pool.query(`ALTER TABLE active_trips ADD COLUMN IF NOT EXISTS custom_destination_lng DECIMAL(11,8) DEFAULT NULL`);

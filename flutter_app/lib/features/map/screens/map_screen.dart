@@ -8,8 +8,10 @@ import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:vibration/vibration.dart';
 
+import '../../../core/data/repositories/credits_repository.dart';
 import '../../../core/data/repositories/routes_repository.dart';
 import '../../../core/domain/models/bus_route.dart';
+import '../../../core/domain/models/notification_prefs.dart';
 import '../../../core/domain/models/route_activity.dart';
 import '../../../core/error/result.dart';
 import '../../../core/l10n/strings.dart';
@@ -20,8 +22,13 @@ import '../../../core/storage/secure_storage.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/loading_indicator.dart';
+import '../../../shared/widgets/app_snackbar.dart';
+import '../../../shared/widgets/notification_opt_in_dialog.dart';
 import '../../../shared/widgets/route_code_badge.dart';
 import '../../../shared/widgets/route_polyline_layer.dart';
+import '../../auth/providers/auth_notifier.dart';
+import '../../auth/providers/auth_state.dart';
+import '../../profile/providers/profile_notifier.dart';
 import '../providers/map_active_positions_provider.dart';
 import '../providers/map_provider.dart';
 import '../providers/map_state.dart';
@@ -239,11 +246,14 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       final etaText = eta == 0
           ? AppStrings.waitingEtaArriving
           : '~$eta ${AppStrings.waitingEtaMinutes}';
-      unawaited(NotificationService.showAlert(
-        title: '🚌 ${AppStrings.waitingBusNearTitle}',
-        body: '${route.code} · ${route.name} — $etaText${distText.isNotEmpty ? ' · $distText' : ''}',
+      // isFirstPoll: true only when this fires before _waitingPolled is set —
+      // meaning the bus was already nearby when the user first opened waiting mode.
+      unawaited(_handleBusNearbyNotification(
+        route,
+        '$etaText${distText.isNotEmpty ? ' · $distText' : ''}',
+        distanceMeters: distM ?? double.infinity,
+        isFirstPoll: !_waitingPolled,
       ));
-      unawaited(_vibrateWaitingAlert());
     }
 
     if (mounted) {
@@ -253,6 +263,72 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         _waitingDistanceM = distM;
       });
     }
+  }
+
+  Future<void> _handleBusNearbyNotification(
+    BusRoute route,
+    String etaAndDist, {
+    double distanceMeters = double.infinity,
+    bool isFirstPoll = false,
+  }) async {
+    final authState = ref.read(authNotifierProvider);
+    if (authState is! Authenticated) return;
+
+    final NotificationPrefs? prefs = authState.user.notificationPrefs;
+
+    // ── First time: show opt-in dialog ──────────────────────────────────
+    if (prefs?.busNearby == null) {
+      if (!mounted) return;
+      final enabled = await showNotificationOptInDialog(
+        context,
+        type: NotificationOptInType.busNearby,
+      );
+      if (!mounted) return;
+      final merged = <String, dynamic>{
+        ...?prefs?.toJson(),
+        'bus_nearby': enabled,
+      };
+      await ref.read(authNotifierProvider.notifier).updateNotificationPrefs(merged);
+      if (!enabled) return;
+    }
+
+    // ── Preference explicitly disabled ───────────────────────────────────
+    if (prefs?.busNearby == false) return;
+
+    // ── Charge credits for free users ────────────────────────────────────
+    // Reduced price (1 credit) when the bus was already within 1 km the moment
+    // the user opened the waiting view (isFirstPoll == true). Full price (3)
+    // when the bus approached later — the user benefited from the full waiting
+    // session before the alert fired.
+    final isPremium = authState.user.hasActivePremium || authState.user.role == 'admin';
+    if (!isPremium) {
+      final creditAmount = (isFirstPoll && distanceMeters < 1000) ? 1 : 3;
+      final result = await ref.read(creditsRepositoryProvider).spend(
+        <String, dynamic>{
+          'amount': creditAmount,
+          'description': AppStrings.notifBusNearbyChargeDescription,
+        },
+      );
+      if (result is Failure) {
+        if (mounted) {
+          AppSnackbar.show(
+            context,
+            AppStrings.notifBusNearbyNoCredits,
+            SnackbarType.error,
+          );
+        }
+        return;
+      }
+      // Keep the profile balance in sync after charging.
+      unawaited(ref.read(profileNotifierProvider.notifier).refreshBalance());
+    }
+
+    // ── Show notification ────────────────────────────────────────────────
+    unawaited(NotificationService.showAlert(
+      title: '🚌 ${AppStrings.waitingBusNearTitle}',
+      body: '${route.code} · ${route.name} — $etaAndDist',
+    ));
+    unawaited(_vibrateWaitingAlert());
   }
 
   Future<void> _vibrateWaitingAlert() async {

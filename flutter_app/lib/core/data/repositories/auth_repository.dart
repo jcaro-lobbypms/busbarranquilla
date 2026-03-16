@@ -96,6 +96,14 @@ class AuthRepository {
     }
   }
 
+  Future<void> updateNotificationPrefs(Map<String, dynamic> prefs) async {
+    try {
+      await _source.updateNotificationPrefs(prefs);
+    } catch (_) {
+      // Non-critical
+    }
+  }
+
   Future<Result<void>> loginWithGoogle(String idToken) async {
     try {
       final data = await _source.loginWithGoogle(idToken);

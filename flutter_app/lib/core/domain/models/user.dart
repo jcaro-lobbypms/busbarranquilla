@@ -1,4 +1,5 @@
 import 'model_parsers.dart';
+import 'notification_prefs.dart';
 
 class User {
   final int id;
@@ -14,6 +15,7 @@ class User {
   final int reputation;
   final DateTime? createdAt;
   final String? referralCode;
+  final NotificationPrefs? notificationPrefs;
 
   const User({
     required this.id,
@@ -29,6 +31,7 @@ class User {
     required this.reputation,
     this.createdAt,
     this.referralCode,
+    this.notificationPrefs,
   });
 
   bool get hasActivePremium => isPremium || role == 'premium';
@@ -48,6 +51,9 @@ class User {
       reputation: asInt(json['reputation']),
       createdAt: asDateTimeOrNull(json['created_at']),
       referralCode: asStringOrNull(json['referral_code']),
+      notificationPrefs: json['notification_prefs'] != null
+          ? NotificationPrefs.fromJson(json['notification_prefs'] as Map<String, dynamic>)
+          : null,
     );
   }
 
@@ -66,6 +72,7 @@ class User {
       'reputation': reputation,
       'created_at': createdAt?.toIso8601String(),
       'referral_code': referralCode,
+      if (notificationPrefs != null) 'notification_prefs': notificationPrefs!.toJson(),
     };
   }
 
@@ -83,6 +90,7 @@ class User {
     int? reputation,
     DateTime? createdAt,
     String? referralCode,
+    NotificationPrefs? notificationPrefs,
   }) {
     return User(
       id: id ?? this.id,
@@ -98,6 +106,7 @@ class User {
       reputation: reputation ?? this.reputation,
       createdAt: createdAt ?? this.createdAt,
       referralCode: referralCode ?? this.referralCode,
+      notificationPrefs: notificationPrefs ?? this.notificationPrefs,
     );
   }
 }

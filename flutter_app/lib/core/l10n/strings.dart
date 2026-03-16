@@ -311,6 +311,42 @@ abstract final class AppStrings {
   static const waitingActiveBar = '🔔 Esperando bus';
   static const waitingBusNearTitle = 'Tu bus está cerca';
 
+  // ── Notification opt-in dialog ──────────────────────────────────────────
+  static const notifOptInDecline = 'No por ahora';
+
+  static const notifBusNearbyTitle = 'Avisar cuando el bus llega';
+  static const notifBusNearbyBody =
+      'Te notificamos cuando el bus que esperas está a ~2 minutos.\n\n'
+      'Cuesta 3 créditos por alerta. Los usuarios Premium no pagan.';
+  static const notifBusNearbyAccept = 'Activar (3 créditos)';
+
+  static const notifBoardingTitle = 'Alertas de bajada';
+  static const notifBoardingBody =
+      'Te avisamos a 400 m y a 200 m de tu parada de destino.\n\n'
+      'Cuesta 5 créditos por viaje. Los usuarios Premium no pagan.';
+  static const notifBoardingAccept = 'Activar (5 créditos)';
+
+  static const notifRouteReportsTitle = 'Reportes en tu ruta';
+  static const notifRouteReportsBody =
+      'Recibes una notificación cuando alguien reporta un trancón '
+      'o desvío en la ruta que estás usando.\n\nGratis para todos.';
+  static const notifRouteReportsAccept = 'Activar';
+
+  // ── Notification preferences section ────────────────────────────────────
+  static const notifSectionTitle = 'Notificaciones';
+  static const notifBusNearbyLabel = 'Avisar cuando el bus se acerca';
+  static const notifBusNearbySub = 'Mientras esperas · 3 créditos por alerta';
+  static const notifBoardingLabel = 'Alertas de bajada';
+  static const notifBoardingSub = 'Durante el viaje · 5 créditos por viaje';
+  static const notifRouteReportsLabel = 'Reportes en tu ruta';
+  static const notifRouteReportsSub = 'Trancones y desvíos · Gratis';
+  static const notifPremiumFree = 'Premium: gratis';
+  static const notifSavedSnackbar = 'Preferencia guardada';
+  static const notifBusNearbyNoCredits = 'Sin créditos para alertas de bus';
+  static const notifBusNearbyChargeDescription = 'Alerta bus cercano';
+  static const dropoffNoCredits = 'Sin créditos suficientes para activar las alertas de bajada (necesitas 5)';
+  static const dropoffAutoActivated = 'Alertas de bajada activadas · -5 créditos';
+
   // Help / Guide
   static const helpTitle = 'Cómo usar MiBus';
   static const helpSubtitle = 'Aprende a sacarle el máximo provecho a la app';
