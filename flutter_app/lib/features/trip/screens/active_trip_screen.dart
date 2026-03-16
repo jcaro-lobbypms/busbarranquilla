@@ -381,10 +381,14 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen>
                 subtitle: AppStrings.desvioRutaDiferenteDesc,
                 onTap: () async {
                   Navigator.of(ctx).pop();
-                  ref.read(tripNotifierProvider.notifier).dismissDesvio('ruta_real');
+                  // Capture context-dependent objects before any await.
                   final s = ref.read(tripNotifierProvider);
+                  final messenger = ScaffoldMessenger.of(context);
+                  // Create a desvio report first so the episode has start/end
+                  // tracking (_desvioReportId) — identical to the trancon path.
+                  await ref.read(tripNotifierProvider.notifier).createReport('desvio');
+                  ref.read(tripNotifierProvider.notifier).dismissDesvio('ruta_real');
                   if (s is TripActive) {
-                    final messenger = ScaffoldMessenger.of(context);
                     final result = await ref
                         .read(tripNotifierProvider.notifier)
                         .reportRutaReal(s.route.id, s.route.geometry);

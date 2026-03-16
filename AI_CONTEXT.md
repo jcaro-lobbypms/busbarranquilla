@@ -647,7 +647,11 @@ Vibration.vibrate(
 - **CreditHistoryTile rediseñado**: íconos semánticos por tipo de transacción (bus/viaje, reporte, regalo/bono, alerta, referido); contenedor con color de fondo suave; monto con mayor peso tipográfico
 - **PremiumCard**: lista de beneficios no-premium ahora muestra `Icons.check_circle_rounded` antes de cada feature
 - **Pantalla de ayuda in-app (`HelpScreen`)**: accesible desde Perfil → "Ayuda y guía"; ruta `/profile/help`; 5 secciones expandibles (Mapa, Mis Rutas, Me subí, Créditos, Premium) con preguntas frecuentes tipo FAQ; diseño con `CustomScrollBar` + `SliverAppBar` + cards con borde izquierdo de color por sección; `ExpansionTile` por cada pregunta; strings en `AppStrings` (helpTitle, helpMenuLabel, helpMapTitle, helpPlannerTitle, helpTripTitle, helpCreditsTitle, helpPremiumTitle)
+- **Tarjeta "Novedades" en HelpScreen**: `_ChangelogSection` (`ConsumerWidget`) se inserta al tope de `HelpScreen`; muestra 4 bullets (modo espera + auto-boarding, alertas M4/M5, desvío con trayecto, GPS en segundo plano); empieza expandida si el usuario nunca la ha abierto (key `help_changelog_seen_v2` en `SharedPreferences`); al expandir llama `markHelpChangelogSeen()` + `ref.invalidate(helpChangelogSeenProvider)`. Badge rojo en el tile "Ayuda y guía" del Perfil mientras `helpChangelogSeen == false`. `helpChangelogSeenProvider` vive en `onboarding_storage.dart`.
 - **Sistema de preferencias de notificaciones (spec 34)**: columna `notification_prefs JSONB DEFAULT '{}'` en `users`; endpoint `PATCH /api/auth/notification-prefs` (auth); modelo `NotificationPrefs` en Flutter con campos nullable (`busNearby`, `boardingAlerts`, `routeReports`) — `null` = nunca configurado, `true/false` = preferencia guardada; diálogo opt-in primera vez por tipo (`notification_opt_in_dialog.dart`); sección "Notificaciones" en `ProfileScreen` con 3 toggles; alerta "bus cercano" cobra **3 créditos** a usuarios free (premium/admin gratis); lógica en `_handleBusNearbyNotification()` en `map_screen.dart`
+- **Auto-boarding inteligente (spec 35)**: 5 mecanismos en modo espera (`MapScreen`): M1 socket co-movimiento (3 muestras Haversine <200m mismo sentido → auto-board con undo 8s), M2 GPS on-route rápido (>3 m/s <100m de ruta → auto-board), M3 GPS off-route (>500m de espera → cancela modo espera), M4 on-route lento (<1 m/s ≥90s → dialog "¿Ya te subiste?"), M5 off-route lento + >1 km (→ dialog "¿Sigues esperando?"); background location en waiting: `_startPositionStream(background: true)` usa `LocationService.backgroundPositionStream` (ForegroundService) para que los timers funcionen con pantalla bloqueada; WaitingBanner chip verde "Monitoreando tu posición" cuando monitor activo; QuickBoardSheet: `_error = true` al fallar carga + botón Reintentar
+- **Alertas inteligentes modo espera (spec 36)**: dialog M4 "¿Ya te subiste?" (Sí ya estoy / No todavía) y M5 "¿Sigues esperando?" (Sí sigo / Cogí otro bus); "Cogí otro bus" abre `QuickBoardSheet` para cambiar a otra ruta sin perder contexto
+- **Episodios de desvío completos (specs 23+35)**: al elegir "Ruta diferente al mapa" Flutter crea `reports.type='desvio'` (registra `created_at`/`resolved_at` del episodio); `endTrip()` cierra el segmento GPS en `route_update_reports.reported_geometry` (`[[start],[end]]`) vía `updateDeviationReEntry`; `getRouteUpdateAlerts` devuelve `desvio_episodes[]` (lat, lng, duración, estado) desde `reports`; `AdminRouteAlerts.tsx` muestra tabla de episodios + marcadores morados pulsantes en mini-mapa + badge de conteo
 
 ### Pendiente 🚧
 - Publicación en Google Play (requiere SHA-1 Firebase + signing config en release build)
@@ -852,4 +856,43 @@ Cuando el usuario está en `BoardingScreen` y toca `RoutePreviewSheet`, puede el
 
 ---
 
-*Última actualización: 2026-03-16 (v25)*
+### Flutter — Auto-boarding inteligente (Spec 35) + Alertas inteligentes en espera (Spec 36)
+
+**Auto-boarding — 3 mecanismos en `map_screen.dart`:**
+- **M1 (socket co-movimiento):** detecta co-movimiento <40m con otro pasajero durante ≥3 min + ambos movidos ≥100m → dispara `_triggerAutoBoarding()`
+- **M2 (GPS on-route):** timer 30s — si usuario está <150m de geometría + ≥200m desde inicio + velocidad ≥10 km/h durante ≥4 min → auto-boarding
+- **M3 (GPS off-route → auto-cancelar espera):** mismo timer — si >300m de geometría + velocidad ≥10 km/h por ≥4 min → cancela modo espera con snackbar
+- **M4 (GPS on-route lento):** si velocidad <10 km/h en ruta por ≥8 min → dialog "¿Ya te subiste al bus?" con 3 opciones: Sí (quick board sheet), Cogí otro, Sigo esperando
+- **M5 (GPS off-route lento + >1km):** si >1km de inicio + velocidad <10 km/h + off-route por ≥5 min → dialog "¿Sigues esperando?"
+- `_triggerAutoBoarding()` muestra SnackBar con SnackBarAction "Deshacer" (8s), luego llama `startTrip()` → `context.go('/trip')`
+- `QuickBoardSheet` — `DraggableScrollableSheet` con lista de rutas + buscador, llama `startTrip()` directamente
+
+**Waiting mode — mejoras de robustez:**
+- **Background location:** `_startWaiting()` llama `_startPositionStream(background: true)` → usa `LocationService.backgroundPositionStream` (ForegroundService Android, background updates iOS). `_stopWaiting()` revierte con `_startPositionStream()`.
+- **Indicador visual en banner:** `_WaitingBanner` recibe `monitoringActive` → muestra chip verde "Monitoreando tu posición" bajo la ETA cuando el GPS timer está activo.
+- **QuickBoardSheet error state:** si `list()` falla → muestra ícono wifi_off + texto + botón "Reintentar" que relanza `_loadRoutes()`.
+
+**Campos de estado agregados en `_MapScreenState`:**
+```
+_autoboardProximityStart, _autoboardUserPosAtStart, _autoboardBusPosAtStart, _autoboardAnchorTripId
+_waitingStartPosition, _onRouteStart, _offRouteStart, _gpsMovementTimer
+_userPosAtOnRouteStart, _userPosAtOffRouteStart, _slowAlertShown, _farAlertShown
+_autoboardPending, _autoboardUndoTimer
+```
+
+**Nuevas strings en `AppStrings`:**
+`autoboardDetected`, `autoboardUndo`, `autoboardCancelled`, `waitingAutoCancelled`, `waitingSlowOnRoute*`, `waitingFarOffRoute*`, `quickBoardTitle`, `quickBoardSearchHint`, `quickBoardLoadError`, `quickBoardRetry`, `waitingMonitorLabel`
+
+---
+
+### Episodios de desvío completos — "Ruta diferente al mapa"
+
+**Problema corregido:** Al elegir "Ruta diferente al mapa" en el diálogo de desvío, no se creaba reporte `desvio` → `_desvioReportId = null` → sin `resolved_at` → sin duración del episodio. Tampoco se cerraba el segmento GPS en `route_update_reports`.
+
+**Cambios:**
+1. **`active_trip_screen.dart`** — `onTap` de "Ruta diferente": llama `createReport('desvio')` antes de `dismissDesvio('ruta_real')`. `ScaffoldMessenger.of(context)` capturado antes del `await` para evitar lint de BuildContext across async gaps.
+2. **`trip_notifier.dart` `endTrip()`** — si `_deviationRouteId != null` al finalizar viaje, llama `updateDeviationReEntry` con GPS actual para cerrar el segmento `[start → bajada]` en `route_update_reports.reported_geometry`.
+3. **`routeUpdateController.ts` `getRouteUpdateAlerts`** — añade query a tabla `reports` para `type = 'desvio'` de los últimos 30 días. Devuelve `desvio_episodes[]` con `{id, lat, lng, created_at, resolved_at, duration_minutes, reporter_name}`.
+4. **`AdminRouteAlerts.tsx`** — nueva interfaz `DesvioEpisode`; badge morado "N episodios de desvío" en cabecera; tabla "Episodios de desvío registrados" con pasajero/inicio/duración/estado; marcadores morados en mini-mapa con tooltip.
+
+*Última actualización: 2026-03-16 (v29)*

@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart' show Share;
 import '../../../core/domain/models/notification_prefs.dart';
 import '../../../core/domain/models/user.dart';
 import '../../../core/l10n/strings.dart';
+import '../../../core/storage/onboarding_storage.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/extensions/datetime_extensions.dart';
 import '../../../shared/widgets/app_button.dart';
@@ -60,6 +61,8 @@ class _ProfileReadyView extends ConsumerWidget {
     final topPad = MediaQuery.of(context).padding.top;
     final trialActive = user.trialExpiresAt != null &&
         user.trialExpiresAt!.isAfter(DateTime.now());
+    final helpChangelogSeen =
+        ref.watch(helpChangelogSeenProvider).value ?? true;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -218,6 +221,7 @@ class _ProfileReadyView extends ConsumerWidget {
                           icon: Icons.help_outline_rounded,
                           iconColor: const Color(0xFF7C3AED),
                           title: AppStrings.helpMenuLabel,
+                          showBadge: !helpChangelogSeen,
                           onTap: () => context.push('/profile/help'),
                         ),
                         const Divider(height: 1, indent: 56, endIndent: 16),
@@ -289,26 +293,46 @@ class _MenuTile extends StatelessWidget {
   final Color iconColor;
   final String title;
   final VoidCallback onTap;
+  final bool showBadge;
 
   const _MenuTile({
     required this.icon,
     required this.iconColor,
     required this.title,
     required this.onTap,
+    this.showBadge = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      leading: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: iconColor.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(9),
-        ),
-        child: Icon(icon, color: iconColor, size: 20),
+      leading: Stack(
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: iconColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, color: iconColor, size: 20),
+          ),
+          if (showBadge)
+            Positioned(
+              top: -3,
+              right: -3,
+              child: Container(
+                width: 10,
+                height: 10,
+                decoration: const BoxDecoration(
+                  color: AppColors.error,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+        ],
       ),
       title: Text(
         title,

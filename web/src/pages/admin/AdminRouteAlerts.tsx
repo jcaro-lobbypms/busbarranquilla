@@ -17,6 +17,16 @@ interface ReportedGeometry {
   geometry: [number, number][];
 }
 
+interface DesvioEpisode {
+  id: number;
+  lat: number | null;
+  lng: number | null;
+  created_at: string;
+  resolved_at: string | null;
+  duration_minutes: number;
+  reporter_name: string;
+}
+
 interface RouteAlert {
   id: number;
   name: string;
@@ -29,6 +39,7 @@ interface RouteAlert {
   reporters: Reporter[];
   reporter_positions: [number, number][];
   reported_geometries: ReportedGeometry[];
+  desvio_episodes: DesvioEpisode[];
 }
 
 // ─── Mini-map component ───────────────────────────────────────────────────────
@@ -39,10 +50,12 @@ function RouteMapPreview({
   geometry,
   reporterPositions,
   reportedGeometries,
+  desvioEpisodes,
 }: {
   geometry: [number, number][] | null;
   reporterPositions: [number, number][];
   reportedGeometries: ReportedGeometry[];
+  desvioEpisodes: DesvioEpisode[];
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -101,6 +114,30 @@ function RouteMapPreview({
       bounds.push([lat, lng] as L.LatLngTuple);
     });
 
+    // Episodios de desvío (morado) — posición GPS donde se detectó el desvío
+    desvioEpisodes.forEach((ep) => {
+      if (ep.lat === null || ep.lng === null) return;
+      const resolved = ep.resolved_at !== null;
+      const durationText = ep.duration_minutes < 60
+        ? `${ep.duration_minutes} min`
+        : `${(ep.duration_minutes / 60).toFixed(1)} h`;
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="position:relative;width:16px;height:16px">
+          <div style="position:absolute;inset:0;background:#7C3AED;border-radius:50%;opacity:0.3;animation:ping 1.5s cubic-bezier(0,0,0.2,1) infinite"></div>
+          <div style="position:absolute;inset:3px;background:#7C3AED;border-radius:50%;border:1.5px solid white"></div>
+        </div>`,
+        iconSize: [16, 16], iconAnchor: [8, 8],
+      });
+      L.marker([ep.lat, ep.lng], { icon })
+        .bindTooltip(
+          `🚧 ${ep.reporter_name} · ${durationText}${resolved ? '' : ' (aún activo)'}`,
+          { permanent: false, direction: 'top' }
+        )
+        .addTo(map);
+      bounds.push([ep.lat, ep.lng] as L.LatLngTuple);
+    });
+
     if (bounds.length > 0) {
       map.fitBounds(L.latLngBounds(bounds), { padding: [24, 24] });
     } else {
@@ -132,6 +169,12 @@ function RouteMapPreview({
           <span className="flex items-center gap-1.5">
             <span className="inline-block w-2.5 h-2.5 bg-red-500 rounded-full" />
             Última posición GPS
+          </span>
+        )}
+        {desvioEpisodes.some(e => e.lat !== null) && (
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-2.5 h-2.5 bg-purple-600 rounded-full" />
+            Episodio de desvío
           </span>
         )}
       </div>
@@ -276,6 +319,11 @@ export default function AdminRouteAlerts() {
                     🚧 {alert.trancon_count} dijeron "trancón"
                   </span>
                 )}
+                {(alert.desvio_episodes ?? []).length > 0 && (
+                  <span className="inline-flex items-center gap-1.5 bg-purple-100 text-purple-700 text-sm px-3 py-1 rounded-full">
+                    📍 {alert.desvio_episodes.length} {alert.desvio_episodes.length === 1 ? 'episodio' : 'episodios'} de desvío
+                  </span>
+                )}
                 <button
                   onClick={() => toggleExpanded(alert.id)}
                   className="ml-auto text-xs text-blue-600 hover:text-blue-700 font-medium"
@@ -298,6 +346,7 @@ export default function AdminRouteAlerts() {
                         geometry={alert.geometry}
                         reporterPositions={alert.reporter_positions}
                         reportedGeometries={alert.reported_geometries ?? []}
+                        desvioEpisodes={alert.desvio_episodes ?? []}
                       />
                     ) : (
                       <div className="bg-gray-100 rounded-lg h-40 flex items-center justify-center text-sm text-gray-400">
@@ -310,6 +359,52 @@ export default function AdminRouteAlerts() {
                       </p>
                     )}
                   </div>
+
+                  {/* Desvio episodes table */}
+                  {(alert.desvio_episodes ?? []).length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                        Episodios de desvío registrados ({alert.desvio_episodes.length})
+                      </p>
+                      <div className="rounded-lg border border-purple-100 overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-purple-50 text-xs text-purple-700 uppercase tracking-wide">
+                              <th className="px-3 py-2 text-left font-medium">Pasajero</th>
+                              <th className="px-3 py-2 text-left font-medium">Inicio</th>
+                              <th className="px-3 py-2 text-left font-medium">Duración</th>
+                              <th className="px-3 py-2 text-left font-medium">Estado</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-purple-50">
+                            {alert.desvio_episodes.map((ep) => {
+                              const durationText = ep.duration_minutes < 60
+                                ? `${ep.duration_minutes} min`
+                                : `${(ep.duration_minutes / 60).toFixed(1)} h`;
+                              return (
+                                <tr key={ep.id} className="hover:bg-purple-50/50">
+                                  <td className="px-3 py-2 font-medium text-gray-900">{ep.reporter_name}</td>
+                                  <td className="px-3 py-2 text-gray-500 text-xs">{formatRelative(ep.created_at)}</td>
+                                  <td className="px-3 py-2 text-xs font-semibold text-purple-700">{durationText}</td>
+                                  <td className="px-3 py-2">
+                                    {ep.resolved_at ? (
+                                      <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 text-xs font-medium px-2 py-0.5 rounded-full">
+                                        ✓ Resuelto
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 bg-orange-100 text-orange-700 text-xs font-medium px-2 py-0.5 rounded-full">
+                                        ⏳ Activo
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Reporters table */}
                   {alert.reporters.length > 0 && (

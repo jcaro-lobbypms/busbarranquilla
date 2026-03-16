@@ -114,13 +114,17 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     });
   }
 
-  void _startPositionStream() {
-    _positionSubscription = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 10,
-      ),
-    ).listen((pos) {
+  void _startPositionStream({bool background = false}) {
+    _positionSubscription?.cancel();
+    final stream = background
+        ? LocationService.backgroundPositionStream
+        : Geolocator.getPositionStream(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 10,
+            ),
+          );
+    _positionSubscription = stream.listen((pos) {
       if (!mounted) return;
       final newPos = LatLng(pos.latitude, pos.longitude);
       setState(() => _livePosition = newPos);
@@ -158,7 +162,14 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     _autoboardPending = false;
     _autoboardUndoTimer?.cancel();
     _waitingStartPosition = _livePosition;
+    _userPosAtOnRouteStart = null;
+    _userPosAtOffRouteStart = null;
+    _slowAlertShown = false;
+    _farAlertShown = false;
     _startGpsMovementMonitor(route);
+    // Switch to a background-capable position stream so the GPS movement timers
+    // (M1–M5) keep firing even when the user locks the screen while waiting.
+    _startPositionStream(background: true);
 
     // Initial fetch + fallback poll every 60s (catches socket gaps / reconnects).
     // The socket listener is registered once in initState and guards internally.
@@ -188,6 +199,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     _userPosAtOffRouteStart = null;
     _slowAlertShown = false;
     _farAlertShown = false;
+    // Revert to the regular foreground stream — no need for background updates
+    // once the user is no longer in waiting mode.
+    _startPositionStream();
 
     if (mounted) {
       setState(() {
@@ -965,6 +979,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 polled: _waitingPolled,
                 etaMinutes: _waitingEtaMinutes,
                 distanceMeters: _waitingDistanceM,
+                monitoringActive: _gpsMovementTimer != null,
               ),
             ),
           // Active feed bar — hidden during waiting and trip
@@ -1003,12 +1018,14 @@ class _WaitingBanner extends StatelessWidget {
   final bool polled;
   final int? etaMinutes;
   final double? distanceMeters;
+  final bool monitoringActive;
 
   const _WaitingBanner({
     required this.route,
     required this.polled,
     required this.etaMinutes,
     required this.distanceMeters,
+    required this.monitoringActive,
   });
 
   String get _etaText {
@@ -1037,56 +1054,86 @@ class _WaitingBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         color: AppColors.primaryDark.withValues(alpha: 0.92),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Row(
+          padding: EdgeInsets.fromLTRB(16, 10, 16, monitoringActive ? 6 : 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              RouteCodeBadge(code: route.code),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  route.name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+              Row(
+                children: <Widget>[
+                  RouteCodeBadge(code: route.code),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      route.name,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                  const SizedBox(width: 10),
+                  // Distance chip — shown once data is available
+                  if (distText != null) ...<Widget>[
+                    const Icon(Icons.straighten, color: Colors.white54, size: 13),
+                    const SizedBox(width: 3),
+                    Text(
+                      distText,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  // ETA
+                  if (!polled)
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber),
+                    )
+                  else
+                    const Icon(Icons.access_time, color: Colors.amber, size: 15),
+                  const SizedBox(width: 4),
+                  Text(
+                    _etaText,
+                    style: const TextStyle(
+                      color: Colors.amber,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 10),
-              // Distance chip — shown once data is available
-              if (distText != null) ...<Widget>[
-                const Icon(Icons.straighten, color: Colors.white54, size: 13),
-                const SizedBox(width: 3),
-                Text(
-                  distText,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
+              // Monitoring indicator — shown while GPS movement monitor is active
+              if (monitoringActive) ...<Widget>[
+                const SizedBox(height: 5),
+                Row(
+                  children: <Widget>[
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF4ADE80), // green-400
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    const Text(
+                      AppStrings.waitingMonitorLabel,
+                      style: TextStyle(
+                        color: Color(0xFF86EFAC), // green-300
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
               ],
-              // ETA
-              if (!polled)
-                const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber),
-                )
-              else
-                const Icon(Icons.access_time, color: Colors.amber, size: 15),
-              const SizedBox(width: 4),
-              Text(
-                _etaText,
-                style: const TextStyle(
-                  color: Colors.amber,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
             ],
           ),
         ),

@@ -492,18 +492,22 @@ flutter_app/lib/
 │   │
 │   ├── map/
 │   │   ├── screens/
-│   │   │   ├── map_screen.dart          # flutter_map with all layers, FAB "Me subí", active feed bar
+│   │   │   ├── map_screen.dart          # flutter_map + all layers + FAB "Me subí" + waiting mode (auto-boarding M1-M5, background GPS, _WaitingBanner)
 │   │   │   └── map_pick_screen.dart     # Full-screen map with fixed crosshair, reverse geocodes on confirm
 │   │   ├── providers/
 │   │   │   ├── map_state.dart           # sealed: MapLoading | MapReady(userPosition, buses, reports, activeFeedRoutes) | MapError
-│   │   │   └── map_provider.dart        # initialize(), confirmReport(), selectedFeedRouteProvider
+│   │   │   ├── map_provider.dart        # initialize(), confirmReport(), selectedFeedRouteProvider
+│   │   │   ├── waiting_route_provider.dart       # StateProvider<BusRoute?> — activa/desactiva waiting mode
+│   │   │   ├── waiting_bus_positions_provider.dart # StateProvider<List<LatLng>> — posiciones en tiempo real
+│   │   │   └── map_active_positions_provider.dart  # StateProvider<List<LatLng>> — buses activos (planificador)
 │   │   └── widgets/
 │   │       ├── user_marker_layer.dart       # Green dot normally; bus 🚌 icon when isOnTrip=true
 │   │       ├── bus_marker_layer.dart        # Real-time bus positions from socket
 │   │       ├── report_marker_layer.dart     # Report pins with confirm tap
 │   │       ├── active_feed_bar.dart         # Horizontal scroll of routes with recent activity
 │   │       ├── plan_markers_layer.dart      # Origin (green) + destination (red) markers from planner state
-│   │       └── active_route_bus_layer.dart  # Amber bus markers for active trips on selected route
+│   │       ├── active_route_bus_layer.dart  # Amber bus markers for active trips on selected route
+│   │       └── quick_board_sheet.dart       # DraggableScrollableSheet — lista rutas + buscador → startTrip() directo; error state con retry
 │   │
 │   ├── planner/
 │   │   ├── screens/
@@ -560,7 +564,8 @@ flutter_app/lib/
     │   ├── route_code_badge.dart    # Colored badge for route code (D8, D12...)
     │   ├── distance_chip.dart       # Distance with color: green ≤300m / amber ≤600m / red >600m
     │   ├── route_activity_badge.dart # "N usuarios activos · hace X min"
-    │   └── route_polyline_layer.dart # flutter_map layer for blue route geometry polyline
+    │   ├── route_polyline_layer.dart # flutter_map layer for blue route geometry polyline
+    │   └── notification_opt_in_dialog.dart # Diálogo opt-in primera vez por tipo (busNearby, boardingAlerts, routeReports)
     └── extensions/
         ├── datetime_extensions.dart # .formatDate(), .timeAgo()
         └── double_extensions.dart   # .toDistanceString() → "250 m" or "1.2 km"
@@ -634,6 +639,17 @@ Specs are numbered markdown files describing feature implementations for Codex:
 | 23 | Desvío dialog differentiation (4 opciones: temporal vs ruta_real vs ignorar vs bajarse) |
 | 24 | Timer + credits visibility (badges con fondo en top bar) |
 | 25 | Smart ruta_real report (GPS validation + re-entry timer + backend geospatial check) |
+| 26 | Boarding distance warning >800m (dialog, `force` param) |
+| 27 | Occupancy state polling every 2min during active trip |
+| 28 | Colombian address normalization ("Cr 52 N 45" → "Cr 52 #45") |
+| 29 | Nearby radius 500m → 300m in planner |
+| 30 | Refresh button (↻) for nearby routes in planner |
+| 31 | Inline preview of nearby route (tap to expand, "Subir a este bus" button) |
+| 32 | Activity timeline in RouteActivityBadge (events[], expandable) |
+| 33 | Active bus positions on map when selecting route |
+| 34 | Notification preferences (busNearby, boardingAlerts, routeReports; opt-in dialog; ProfileScreen toggles) |
+| 35 | Auto-boarding inteligente — M1 socket co-movimiento + M2 GPS on-route + M3 GPS off-route auto-cancel; `_triggerAutoBoarding()` con undo 8s; background location en waiting mode; WaitingBanner monitoring indicator; QuickBoardSheet error state |
+| 36 | Alertas inteligentes modo espera — M4 on-route lento (dialog "¿Ya te subiste?") + M5 off-route lento (dialog "¿Sigues esperando?") + QuickBoardSheet ("cogí otro bus") |
 
 **When writing new specs for Codex:**
 - Reference existing file paths and widget/class names exactly
@@ -1002,6 +1018,20 @@ User votes that the bus route has changed or is stuck. ≥3 `ruta_real` votes tr
 - **Cards con borde izquierdo dinámico** — "Cerca de ti" (`boarding_screen.dart`), favoritos y "Buses en tu zona" (`planner_screen.dart`): fondo blanco + sombra suave + borde izquierdo 4px en `AppColors.forRouteCode(route.code)` (misma color que el badge del código de ruta)
 - **Alerta de bajada — selección en mapa** — cuando usuario acepta sin destino: `_pickDestinationOnMap()` abre `MapPickScreen` (crosshair + reverse geocode) en vez de lista de paradas; `TripNotifier.setDestinationByLatLng(lat, lng, label)` crea `Stop` sintético `id: -1` para `DropoffMonitor`; premium/admin no pagan 5 créditos
 - **Preferencias de notificaciones (spec 34)** — `NotificationPrefs` model (`busNearby`, `boardingAlerts`, `routeReports`, todos nullable); columna `notification_prefs JSONB` en `users`; `PATCH /api/auth/notification-prefs`; diálogo opt-in primera vez por tipo; sección "Notificaciones" en `ProfileScreen` con 3 toggles; alerta bus cercano cobra 3 créditos a free users
+- **Auto-boarding inteligente (spec 35)** — 5 mecanismos mientras el usuario espera en `MapScreen`:
+  - M1 — Socket co-movement: si el bus activo en la misma ruta se mueve en la misma dirección (Haversine < 200 m) durante 3 muestras → `_triggerAutoBoarding()` con snackbar de undo 8s
+  - M2 — GPS on-route fast: usuario sobre la ruta (<100 m) moviéndose rápido (>3 m/s) → auto-boarding inmediato
+  - M3 — GPS off-route: usuario se aleja >500 m del punto de espera → cancela modo espera automáticamente
+  - M4 — On-route lento: usuario sobre la ruta pero <1 m/s por ≥90s → dialog "¿Ya te subiste?"
+  - M5 — Off-route lento + >1 km: usuario lejos pero lento → dialog "¿Sigues esperando?"
+  - Background location en waiting mode: `_startPositionStream(background: true)` — usa `LocationService.backgroundPositionStream` (ForegroundService Android) para que los timers M1–M5 funcionen con pantalla bloqueada
+  - `_WaitingBanner` muestra chip verde "Monitoreando tu posición" cuando `_gpsMovementTimer != null`
+- **QuickBoardSheet error state (spec 35)** — `_error = true` al fallar `_loadRoutes()`; UI con ícono `wifi_off` + `AppStrings.quickBoardLoadError` + botón `AppStrings.quickBoardRetry` que relanza `_loadRoutes()`
+- **Alertas inteligentes modo espera (spec 36)** — dialog M4 "¿Ya te subiste?" (opciones: Sí ya estoy / No todavía) y M5 "¿Sigues esperando?" (opciones: Sí sigo / Cogí otro bus); "Cogí otro bus" abre `QuickBoardSheet` para iniciar viaje en otra ruta sin perder contexto
+- **Episodios de desvío completos (specs 23+35)** — cuando usuario elige "Ruta diferente al mapa":
+  - Flutter crea `reports.type='desvio'` (igual que trancón) para registrar `created_at` inicio y `resolved_at` fin
+  - `endTrip()` llama `updateDeviationReEntry` si `_deviationRouteId != null` y hay posición GPS — cierra el segmento `[[start],[end]]` en `route_update_reports.reported_geometry`
+  - Panel admin (`AdminRouteAlerts.tsx`) muestra tabla "Episodios de desvío" por ruta: pasajero, inicio, duración, estado (activo/resuelto); marcadores morados pulsantes en el mini-mapa con tooltip; badge "N episodios de desvío" en la fila de estadísticas
 
 **Pending (Flutter):**
 - Firebase push notifications para `boardingAlerts` y `routeReports` cuando el app está cerrado (busNearby ya funciona con app en background)

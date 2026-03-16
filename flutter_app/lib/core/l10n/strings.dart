@@ -329,6 +329,9 @@ abstract final class AppStrings {
 
   static const quickBoardTitle = 'Selecciona tu bus';
   static const quickBoardSearchHint = 'Buscar ruta...';
+  static const quickBoardLoadError = 'No se pudieron cargar las rutas';
+  static const quickBoardRetry = 'Reintentar';
+  static const waitingMonitorLabel = 'Monitoreando tu posición';
 
   // ── Notification opt-in dialog ──────────────────────────────────────────
   static const notifOptInDecline = 'No por ahora';
@@ -370,6 +373,8 @@ abstract final class AppStrings {
   static const helpTitle = 'Cómo usar MiBus';
   static const helpSubtitle = 'Aprende a sacarle el máximo provecho a la app';
   static const helpMenuLabel = 'Ayuda y guía';
+  static const helpChangelogTitle = '🆕 Novedades en MiBus';
+  static const helpChangelogSubtitle = 'Últimas funciones que agregamos a la app';
   static const helpMapTitle = 'La pestaña Mapa';
   static const helpPlannerTitle = 'La pestaña Mis Rutas';
   static const helpTripTitle = 'Cómo funciona "Me subí"';

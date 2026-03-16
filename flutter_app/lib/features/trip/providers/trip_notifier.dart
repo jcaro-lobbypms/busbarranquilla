@@ -314,7 +314,24 @@ class TripNotifier extends Notifier<TripState> {
       unawaited(ref.read(reportsRepositoryProvider).resolve(desvioReportId));
     }
 
-    _disposeMonitorsAndTimers(); // clears _desvioReportId internally
+    // Close the GPS deviation segment in route_update_reports so the admin
+    // sees a complete [start → got-off] line instead of a single start point.
+    final deviationRouteId = _deviationRouteId;
+    if (deviationRouteId != null) {
+      Position? pos;
+      try {
+        pos = await Geolocator.getLastKnownPosition();
+      } catch (_) {}
+      if (pos != null) {
+        unawaited(ref.read(routesRepositoryProvider).updateDeviationReEntry(
+          deviationRouteId,
+          pos.latitude,
+          pos.longitude,
+        ));
+      }
+    }
+
+    _disposeMonitorsAndTimers(); // clears _desvioReportId / _deviationRouteId internally
     final socket = ref.read(socketServiceProvider);
     if (active.trip.routeId != null) {
       socket.leaveRoute(active.trip.routeId!);

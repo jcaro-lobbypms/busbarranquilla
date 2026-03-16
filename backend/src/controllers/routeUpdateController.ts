@@ -213,6 +213,27 @@ export const getRouteUpdateAlerts = async (_req: Request, res: Response): Promis
           [row.id]
         );
 
+        // Episodios de desvío registrados en la tabla reports (type='desvio')
+        const desvioResult = await pool.query(
+          `SELECT
+             rp.id,
+             rp.report_lat             AS lat,
+             rp.report_lng             AS lng,
+             rp.created_at,
+             rp.resolved_at,
+             ROUND(EXTRACT(EPOCH FROM (COALESCE(rp.resolved_at, NOW()) - rp.created_at)) / 60)
+               AS duration_minutes,
+             u.name AS reporter_name
+           FROM reports rp
+           JOIN users u ON u.id = rp.user_id
+           WHERE rp.route_id = $1
+             AND rp.type = 'desvio'
+             AND rp.created_at > NOW() - INTERVAL '30 days'
+           ORDER BY rp.created_at DESC
+           LIMIT 20`,
+          [row.id]
+        );
+
         // Últimas posiciones GPS de usuarios que reportaron "ruta_real" (viajes activos o recientes)
         const gpsResult = await pool.query(
           `SELECT at.current_latitude AS lat, at.current_longitude AS lng, at.last_location_at
@@ -246,6 +267,24 @@ export const getRouteUpdateAlerts = async (_req: Request, res: Response): Promis
               user_name: r.user_name,
               geometry: r.reported_geometry,
             })),
+          // Episodios de desvío: inicio (created_at) y fin (resolved_at) con GPS
+          desvio_episodes: desvioResult.rows.map((e: {
+            id: number;
+            lat: string | null;
+            lng: string | null;
+            created_at: string;
+            resolved_at: string | null;
+            duration_minutes: string;
+            reporter_name: string;
+          }) => ({
+            id: e.id,
+            lat: e.lat !== null ? parseFloat(e.lat) : null,
+            lng: e.lng !== null ? parseFloat(e.lng) : null,
+            created_at: e.created_at,
+            resolved_at: e.resolved_at,
+            duration_minutes: parseInt(e.duration_minutes, 10),
+            reporter_name: e.reporter_name,
+          })),
         };
       })
     );
