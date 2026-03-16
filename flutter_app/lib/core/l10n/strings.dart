@@ -299,4 +299,5 @@ abstract final class AppStrings {
   static const waitingEtaArriving = 'Bus llegando ahora 🎉';
   static const waitingEtaMinutes = 'min';
   static const waitingActiveBar = '🔔 Esperando bus';
+  static const waitingBusNearTitle = 'Tu bus está cerca';
 }

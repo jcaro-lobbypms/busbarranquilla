@@ -6,12 +6,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:vibration/vibration.dart';
 
 import '../../../core/data/repositories/routes_repository.dart';
 import '../../../core/domain/models/bus_route.dart';
 import '../../../core/domain/models/route_activity.dart';
 import '../../../core/error/result.dart';
 import '../../../core/l10n/strings.dart';
+import '../../../core/notifications/notification_service.dart';
 import '../../../core/location/location_service.dart';
 import '../../../core/socket/socket_service.dart';
 import '../../../core/storage/secure_storage.dart';
@@ -51,6 +53,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   Timer? _waitingPollTimer;
   bool _waitingPolled = false;
   int? _waitingEtaMinutes; // null = no buses / can't calculate
+  bool _waitingBusNearNotified = false; // prevents repeated alerts
 
   @override
   void initState() {
@@ -106,6 +109,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     setState(() {
       _waitingPolled = false;
       _waitingEtaMinutes = null;
+      _waitingBusNearNotified = false;
     });
     _pollWaitingRoute(route);
     _waitingPollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
@@ -143,12 +147,32 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       eta = etaMinutes?.round();
     }
 
+    // Notify user when bus is ≤ 2 minutes away (fires once per waiting session)
+    if (!_waitingBusNearNotified && eta != null && eta <= 2) {
+      _waitingBusNearNotified = true;
+      final etaText = eta == 0
+          ? AppStrings.waitingEtaArriving
+          : '~$eta ${AppStrings.waitingEtaMinutes}';
+      unawaited(NotificationService.showAlert(
+        title: '🚌 ${AppStrings.waitingBusNearTitle}',
+        body: '${route.code} · ${route.name} — $etaText',
+      ));
+      unawaited(_vibrateWaitingAlert());
+    }
+
     if (mounted) {
       setState(() {
         _waitingPolled = true;
         _waitingEtaMinutes = eta;
       });
     }
+  }
+
+  Future<void> _vibrateWaitingAlert() async {
+    final hasVibrator = (await Vibration.hasVibrator()) == true;
+    if (!hasVibrator) return;
+    // Two short pulses: bzzz-pause-bzzz
+    await Vibration.vibrate(pattern: <int>[0, 400, 200, 400]);
   }
 
   // Project point onto polyline → find nearest vertex index
