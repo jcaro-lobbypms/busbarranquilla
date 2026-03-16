@@ -52,7 +52,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   // Waiting mode state
   Timer? _waitingPollTimer;
   bool _waitingPolled = false;
-  int? _waitingEtaMinutes; // null = no buses / can't calculate
+  int? _waitingEtaMinutes;    // null = no buses / can't calculate
+  double? _waitingDistanceM;  // distance in meters to closest approaching bus
   bool _waitingBusNearNotified = false; // prevents repeated alerts
 
   @override
@@ -109,6 +110,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     setState(() {
       _waitingPolled = false;
       _waitingEtaMinutes = null;
+      _waitingDistanceM = null;
       _waitingBusNearNotified = false;
     });
     _pollWaitingRoute(route);
@@ -122,7 +124,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     _waitingPollTimer?.cancel();
     _waitingPollTimer = null;
     ref.read(waitingBusPositionsProvider.notifier).state = const <LatLng>[];
-    if (mounted) setState(() { _waitingPolled = false; _waitingEtaMinutes = null; });
+    if (mounted) setState(() {
+      _waitingPolled = false;
+      _waitingEtaMinutes = null;
+      _waitingDistanceM = null;
+    });
   }
 
   Future<void> _pollWaitingRoute(BusRoute route) async {
@@ -141,21 +147,24 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     ref.read(waitingBusPositionsProvider.notifier).state = positions;
 
     int? eta;
+    double? distM;
     final userPos = _livePosition;
     if (positions.isNotEmpty && userPos != null && route.geometry.isNotEmpty) {
-      final etaMinutes = _calculateEta(positions, userPos, route.geometry);
-      eta = etaMinutes?.round();
+      final result = _calculateEtaAndDistance(positions, userPos, route.geometry);
+      eta = result.eta?.round();
+      distM = result.distanceMeters;
     }
 
     // Notify user when bus is ≤ 2 minutes away (fires once per waiting session)
     if (!_waitingBusNearNotified && eta != null && eta <= 2) {
       _waitingBusNearNotified = true;
+      final distText = distM != null ? _formatDistance(distM) : '';
       final etaText = eta == 0
           ? AppStrings.waitingEtaArriving
           : '~$eta ${AppStrings.waitingEtaMinutes}';
       unawaited(NotificationService.showAlert(
         title: '🚌 ${AppStrings.waitingBusNearTitle}',
-        body: '${route.code} · ${route.name} — $etaText',
+        body: '${route.code} · ${route.name} — $etaText${distText.isNotEmpty ? ' · $distText' : ''}',
       ));
       unawaited(_vibrateWaitingAlert());
     }
@@ -164,6 +173,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       setState(() {
         _waitingPolled = true;
         _waitingEtaMinutes = eta;
+        _waitingDistanceM = distM;
       });
     }
   }
@@ -204,8 +214,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     return d;
   }
 
-  // Returns ETA in minutes — null if no bus is ahead of user on the route
-  static double? _calculateEta(
+  // Returns ETA (minutes) + distance (meters) to the closest approaching bus.
+  // Returns nulls if no bus is ahead of the user on the route.
+  static ({double? eta, double? distanceMeters}) _calculateEtaAndDistance(
     List<LatLng> buses,
     LatLng user,
     List<LatLng> geometry,
@@ -220,9 +231,17 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         if (minDist == null || d < minDist) minDist = d;
       }
     }
-    if (minDist == null) return null;
+    if (minDist == null) return (eta: null, distanceMeters: null);
     const avgSpeedMs = 25000.0 / 3600.0; // 25 km/h in m/s
-    return minDist / avgSpeedMs / 60.0;
+    return (eta: minDist / avgSpeedMs / 60.0, distanceMeters: minDist);
+  }
+
+  static String _formatDistance(double meters) {
+    if (meters >= 1000) {
+      final km = meters / 1000;
+      return '${km.toStringAsFixed(km < 10 ? 1 : 0)} km';
+    }
+    return '${meters.round()} m';
   }
 
   // ── Build ───────────────────────────────────────────────────────────────────
@@ -393,6 +412,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 route: waitingRoute,
                 polled: _waitingPolled,
                 etaMinutes: _waitingEtaMinutes,
+                distanceMeters: _waitingDistanceM,
               ),
             ),
           // Active feed bar — hidden during waiting and trip
@@ -430,11 +450,13 @@ class _WaitingBanner extends StatelessWidget {
   final BusRoute route;
   final bool polled;
   final int? etaMinutes;
+  final double? distanceMeters;
 
   const _WaitingBanner({
     required this.route,
     required this.polled,
     required this.etaMinutes,
+    required this.distanceMeters,
   });
 
   String get _etaText {
@@ -444,8 +466,18 @@ class _WaitingBanner extends StatelessWidget {
     return '~$etaMinutes ${AppStrings.waitingEtaMinutes}';
   }
 
+  String? get _distanceText {
+    if (!polled || distanceMeters == null) return null;
+    if (distanceMeters! >= 1000) {
+      final km = distanceMeters! / 1000;
+      return '${km.toStringAsFixed(km < 10 ? 1 : 0)} km';
+    }
+    return '${distanceMeters!.round()} m';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final distText = _distanceText;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Material(
@@ -471,6 +503,21 @@ class _WaitingBanner extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
+              // Distance chip — shown once data is available
+              if (distText != null) ...<Widget>[
+                const Icon(Icons.straighten, color: Colors.white54, size: 13),
+                const SizedBox(width: 3),
+                Text(
+                  distText,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+              // ETA
               if (!polled)
                 const SizedBox(
                   width: 14,
