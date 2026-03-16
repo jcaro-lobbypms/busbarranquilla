@@ -15,6 +15,7 @@ import '../../../shared/widgets/app_snackbar.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/loading_indicator.dart';
 import '../../auth/providers/auth_notifier.dart';
+import '../../auth/providers/auth_state.dart';
 import '../providers/profile_notifier.dart';
 import '../providers/profile_state.dart';
 import '../widgets/premium_card.dart';
@@ -232,10 +233,13 @@ class _ProfileReadyView extends ConsumerWidget {
 
                   const SizedBox(height: 12),
 
-                  // ── Notification preferences ─────────────────────
-                  _NotificationsSection(user: user),
-
-                  const SizedBox(height: 12),
+                  // ── Notification preferences (free users only) ───
+                  if (!user.hasActivePremium &&
+                      user.role != 'admin' &&
+                      !(user.trialExpiresAt?.isAfter(DateTime.now()) ?? false)) ...<Widget>[
+                    _NotificationsSection(user: user),
+                    const SizedBox(height: 12),
+                  ],
 
                   // ── Premium card ────────────────────────────────────
                   PremiumCard(user: user),
@@ -448,8 +452,16 @@ class _NotificationsSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final prefs = user.notificationPrefs ?? const NotificationPrefs();
-    final isPremium = user.hasActivePremium || user.role == 'admin';
+    // Watch authNotifierProvider so the toggles reflect the optimistic update
+    // that updateNotificationPrefs applies — profileNotifierProvider holds a
+    // stale copy and doesn't re-read from auth after each toggle.
+    final authState = ref.watch(authNotifierProvider);
+    final liveUser = switch (authState) {
+      Authenticated(user: final u) => u,
+      _ => user,
+    };
+    final prefs = liveUser.notificationPrefs ?? const NotificationPrefs();
+    final isPremium = liveUser.hasActivePremium || liveUser.role == 'admin';
 
     Future<void> toggle(String key, bool newValue) async {
       final merged = <String, dynamic>{

@@ -645,33 +645,40 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final authState = ref.read(authNotifierProvider);
     if (authState is! Authenticated) return;
 
-    final NotificationPrefs? prefs = authState.user.notificationPrefs;
+    final isPremium = authState.user.hasActivePremium ||
+        authState.user.role == 'admin' ||
+        (authState.user.trialExpiresAt?.isAfter(DateTime.now()) ?? false);
 
-    // ── First time: show opt-in dialog ──────────────────────────────────
-    if (prefs?.busNearby == null) {
-      if (!mounted) return;
-      final enabled = await showNotificationOptInDialog(
-        context,
-        type: NotificationOptInType.busNearby,
-      );
-      if (!mounted) return;
-      final merged = <String, dynamic>{
-        ...?prefs?.toJson(),
-        'bus_nearby': enabled,
-      };
-      await ref.read(authNotifierProvider.notifier).updateNotificationPrefs(merged);
-      if (!enabled) return;
+    // Premium and trial users always receive bus-nearby notifications —
+    // no opt-in dialog, no preference check, no credit charge.
+    if (!isPremium) {
+      final NotificationPrefs? prefs = authState.user.notificationPrefs;
+
+      // ── First time: show opt-in dialog ──────────────────────────────
+      if (prefs?.busNearby == null) {
+        if (!mounted) return;
+        final enabled = await showNotificationOptInDialog(
+          context,
+          type: NotificationOptInType.busNearby,
+        );
+        if (!mounted) return;
+        final merged = <String, dynamic>{
+          ...?prefs?.toJson(),
+          'bus_nearby': enabled,
+        };
+        await ref.read(authNotifierProvider.notifier).updateNotificationPrefs(merged);
+        if (!enabled) return;
+      }
+
+      // ── Preference explicitly disabled ────────────────────────────
+      if (prefs?.busNearby == false) return;
     }
-
-    // ── Preference explicitly disabled ───────────────────────────────────
-    if (prefs?.busNearby == false) return;
 
     // ── Charge credits for free users ────────────────────────────────────
     // Reduced price (1 credit) when the bus was already within 1 km the moment
     // the user opened the waiting view (isFirstPoll == true). Full price (3)
     // when the bus approached later — the user benefited from the full waiting
     // session before the alert fired.
-    final isPremium = authState.user.hasActivePremium || authState.user.role == 'admin';
     if (!isPremium) {
       final creditAmount = (isFirstPoll && distanceMeters < 1000) ? 1 : 3;
       final result = await ref.read(creditsRepositoryProvider).spend(
