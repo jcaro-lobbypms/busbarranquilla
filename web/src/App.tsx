@@ -19,6 +19,7 @@ import AdminBuses from './pages/admin/AdminBuses';
 import AdminRouteAlerts from './pages/admin/AdminRouteAlerts';
 import AdminStats from './pages/admin/AdminStats';
 import AdminRoutes from './pages/admin/AdminRoutes';
+import AdminGpsReports from './pages/admin/AdminGpsReports';
 
 function PublicLayout() {
   return <><Navbar /><Outlet /></>;
@@ -65,6 +66,7 @@ function AppRoutes() {
           <Route path="/admin/transmetro" element={<AdminTransmetro />} />
           <Route path="/admin/routes" element={<AdminRoutes />} />
           <Route path="/admin/route-alerts" element={<AdminRouteAlerts />} />
+          <Route path="/admin/gps-reports" element={<AdminGpsReports />} />
         </Route>
       </Route>
     </Routes>

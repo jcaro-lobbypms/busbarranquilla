@@ -227,6 +227,12 @@ GET  /api/routes/active-feed — hasta 8 rutas con actividad en última hora (au
 GET  /api/routes/:id/activity — actividad última hora: count, posiciones, eventos (auth)
 POST /api/routes/:id/update-report — votar trancon|ruta_real con { lat, lng } para ruta_real (auth); valida GPS contra geometría, 400 on_route:true si < 200m
 PATCH /api/routes/:id/update-report/reentry — registrar re-ingreso a la ruta { lat, lng } (auth); actualiza reported_geometry con tramo completo [inicio, fin]
+GET  /api/routes/update-alerts — rutas con ≥3 reportes ruta_real en 30 días, con geometry + reporters + reporter_positions (admin)
+GET  /api/routes/update-alerts/count — cantidad de alertas pendientes para badge del sidebar (admin)
+PATCH /api/routes/:id/dismiss-alert — marcar alerta como revisada (admin)
+PATCH /api/routes/:id/apply-reported-geometry — reemplaza geometry con track GPS de un usuario (admin)
+GET  /api/admin/routes/ruta-real-reports — TODOS los reportes ruta_real individuales sin filtro de umbral, con reported_geometry + route_geometry (admin, máx 200)
+DELETE /api/admin/routes/ruta-real-reports/:id — eliminar un reporte ruta_real individual (admin)
 ```
 
 ### Viajes
@@ -612,7 +618,7 @@ Vibration.vibrate(
 
 ### Completado ✅
 - Backend completo: auth, rutas, paradas, reportes, créditos, viajes, favoritos, pagos Wompi
-- Web admin panel: users, routes (editor geometría OSRM), companies, route alerts, stats dashboard
+- Web admin panel: users, routes (editor geometría OSRM), companies, route alerts, stats dashboard, GPS reports (todos los ruta_real individuales)
 - Flutter app completa: auth (email + Google), onboarding, mapa, boarding flow, viaje activo (4 monitores), planificador, perfil, créditos, favoritos, premium
 - Sistema anti-fraude: cooldown 5 min entre viajes, bono completar ≥2 km, `suspicious_minutes` (inactividad 30min → cierre automático descontando minutos sospechosos)
 - **DesvíoMonitor unificado**: umbral 100m / 60s en ambas ramas (geometría y paradas fallback)

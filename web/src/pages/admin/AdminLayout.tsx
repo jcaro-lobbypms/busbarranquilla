@@ -11,6 +11,7 @@ const navItems = [
   { to: '/admin/transmetro', label: 'Transmetro', emoji: '🚇' },
   { to: '/admin/companies', label: 'Empresas', emoji: '🏢' },
   { to: '/admin/route-alerts', label: 'Alertas de rutas', emoji: '⚠️', badge: true },
+  { to: '/admin/gps-reports', label: 'Reportes GPS', emoji: '📍' },
 ];
 
 export default function AdminLayout() {

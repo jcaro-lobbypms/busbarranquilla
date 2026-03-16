@@ -22,6 +22,7 @@ import {
   getAdminStats,
 } from '../controllers/adminController';
 import { parseRouteDescription } from '../controllers/routeDescriptionController';
+import { getAllRutaRealReports, deleteRutaRealReport } from '../controllers/routeUpdateController';
 import { authMiddleware } from '../middlewares/authMiddleware';
 import { requireRole } from '../middlewares/roleMiddleware';
 
@@ -36,6 +37,8 @@ router.patch('/users/:id/toggle-active', authMiddleware, requireRole('admin'), t
 router.delete('/users/:id', authMiddleware, requireRole('admin'), deleteUser);
 
 // Routes — named routes BEFORE any /:id params
+router.get('/routes/ruta-real-reports', authMiddleware, requireRole('admin'), getAllRutaRealReports);
+router.delete('/routes/ruta-real-reports/:reportId', authMiddleware, requireRole('admin'), deleteRutaRealReport);
 router.get('/routes/pending-count', authMiddleware, requireRole('admin'), getPendingCount);
 router.post('/routes/scan-blog', authMiddleware, requireRole('admin'), scanBlogRoutes);
 router.post('/routes/process-imports', authMiddleware, requireRole('admin'), processImportedRoutes);

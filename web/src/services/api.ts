@@ -142,6 +142,12 @@ export const routeAlertsApi = {
 
   dismissAlert: (routeId: number) =>
     api.patch(`/api/routes/${routeId}/dismiss-alert`),
+
+  getRutaRealReports: () =>
+    api.get('/api/admin/routes/ruta-real-reports'),
+
+  deleteRutaRealReport: (reportId: number) =>
+    api.delete(`/api/admin/routes/ruta-real-reports/${reportId}`),
 };
 
 // ─── Stops ───────────────────────────────────────────────────────────────────

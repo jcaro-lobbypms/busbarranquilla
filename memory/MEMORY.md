@@ -70,6 +70,33 @@
 - `geocodeViaGoogle(intersection, city)` — valida bbox BQ metro; intenta con `city` y fallback `Barranquilla`
 - Variable de entorno requerida: `VITE_GOOGLE_MAPS_KEY` (si no está definida, `geocodeViaGoogle` retorna null silenciosamente)
 
+## Admin GPS Reports — nueva página (2026-03-15)
+
+### Qué hace
+`/admin/gps-reports` — muestra TODOS los reportes `ruta_real` individuales sin filtro de umbral.
+A diferencia de `AdminRouteAlerts` (solo rutas con ≥3 reportes), esta página muestra cada reporte individual para que el admin pueda ver cada traza GPS.
+
+### Endpoint nuevo
+`GET /api/admin/routes/ruta-real-reports` — devuelve hasta 200 reportes ordenados por fecha desc.
+Cada reporte incluye `reported_geometry` (traza GPS del usuario) y `route_geometry` (polilínea actual de la ruta en DB).
+`DELETE /api/admin/routes/ruta-real-reports/:reportId` — elimina un reporte individual.
+
+### UI
+- Agrupado por ruta (header con código + nombre + conteo)
+- Por reporte: nombre usuario, tiempo relativo, badge "N pts GPS" o "Solo punto inicial"
+- Botón "Ver mapa" → `MiniMap` Leaflet inline (azul = ruta actual, naranja = GPS reportado)
+- Botón "Aplicar como ruta" → llama `routesApi.applyReportedGeometry()` (ya existía en backend)
+- Botón "Eliminar" → DELETE al endpoint nuevo
+- Enlace en sidebar: "Reportes GPS" entre "Alertas de rutas" y el footer del sidebar
+
+### Archivos modificados
+- `backend/src/controllers/routeUpdateController.ts` — añadido `getAllRutaRealReports` + `deleteRutaRealReport`
+- `backend/src/routes/adminRoutes.ts` — añadidas 2 rutas nuevas + import
+- `web/src/services/api.ts` — añadido `getRutaRealReports` + `deleteRutaRealReport` a `routeAlertsApi`
+- `web/src/pages/admin/AdminGpsReports.tsx` — nueva página (creada)
+- `web/src/App.tsx` — nueva ruta `/admin/gps-reports`
+- `web/src/pages/admin/AdminLayout.tsx` — nueva entrada en `navItems`
+
 ## Archivos clave modificados (esta sesión)
 - `backend/src/controllers/routeDescriptionController.ts` — geocodificación multimunicipio + Google Maps
 - `web/src/pages/admin/AdminRoutes.tsx` — borrado por segmento (reemplaza borrador freehand)

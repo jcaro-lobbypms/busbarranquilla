@@ -326,3 +326,56 @@ export const dismissRouteAlert = async (req: Request, res: Response): Promise<vo
     res.status(500).json({ message: 'Error interno del servidor' });
   }
 };
+
+// GET /api/admin/routes/ruta-real-reports  (solo admin)
+// Todos los reportes ruta_real individuales con su trazado GPS — sin filtro de threshold
+export const getAllRutaRealReports = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await pool.query(
+      `SELECT
+         rur.id,
+         rur.route_id,
+         rur.user_id,
+         rur.reported_geometry,
+         rur.created_at,
+         u.name  AS user_name,
+         r.name  AS route_name,
+         r.code  AS route_code,
+         r.geometry AS route_geometry
+       FROM route_update_reports rur
+       JOIN users u ON u.id = rur.user_id
+       JOIN routes r ON r.id = rur.route_id
+       WHERE rur.tipo = 'ruta_real'
+       ORDER BY rur.created_at DESC
+       LIMIT 200`
+    );
+
+    const reports = result.rows.map((row: any) => ({
+      id: row.id,
+      route_id: row.route_id,
+      route_name: row.route_name,
+      route_code: row.route_code,
+      user_name: row.user_name,
+      created_at: row.created_at,
+      reported_geometry: row.reported_geometry as [number, number][] | null,
+      route_geometry: row.route_geometry as [number, number][] | null,
+    }));
+
+    res.json({ reports });
+  } catch (error) {
+    console.error('Error en getAllRutaRealReports:', error);
+    res.status(500).json({ message: 'Error interno del servidor' });
+  }
+};
+
+// DELETE /api/admin/routes/ruta-real-reports/:reportId  (solo admin)
+// Elimina un reporte individual de ruta_real
+export const deleteRutaRealReport = async (req: Request, res: Response): Promise<void> => {
+  const { reportId } = req.params;
+  try {
+    await pool.query(`DELETE FROM route_update_reports WHERE id = $1`, [reportId]);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error interno' });
+  }
+};
