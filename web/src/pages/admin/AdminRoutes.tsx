@@ -248,9 +248,7 @@ export default function AdminRoutes() {
   const [isEditingGeometry, setIsEditingGeometry] = useState(false);
   const [osrmGeometry, setOsrmGeometry] = useState<[number, number][] | null>(null);
   const [geomBeforeEdit, setGeomBeforeEdit] = useState<[number, number][] | null>(null);
-  // Waypoints: puntos de control que el admin arrastra (pocos, extraídos de la geometría)
-  const [waypoints, setWaypoints] = useState<[number, number][] | null>(null);
-  const [snapping] = useState(false); // kept for button disabled states; no OSRM auto-routing in edit mode
+  const snapping = false;
 
   // ── Step 2 — map ────────────────────────────────────────────────────────────
   const [mapReady, setMapReady] = useState(false);
@@ -296,7 +294,6 @@ export default function AdminRoutes() {
   const geomMarkersRef = useRef<L.Layer[]>([]); // holds markers AND polylines for cleanup
   const geomPolylineRef = useRef<L.Polyline | null>(null);
   const isEditingGeometryRef = useRef(false);
-  const waypointsRef = useRef<[number, number][] | null>(null);
   const refTrackLayersRef = useRef<L.Polyline[]>([]); // tracks de referencia GPS de reportantes
   const diffLayersRef = useRef<(L.Polyline | L.CircleMarker)[]>([]); // diff comparison overlay
   const origGeomLayerRef = useRef<L.Polyline | null>(null); // reference underlay during adjust/confirm
@@ -441,10 +438,7 @@ export default function AdminRoutes() {
 
     // Si viene desde Alertas con tracks de referencia, abrir editor directamente
     if (autoStartGeomEdit) {
-      const wpts = geom ? extractDenseWaypoints(geom) : [];
       setGeomBeforeEdit(geom);
-      setWaypoints(wpts);
-      waypointsRef.current = wpts;
       setIsEditingGeometry(true);
       // Navegar directamente al paso 2 (geometría)
       setStep(2);
@@ -603,9 +597,6 @@ export default function AdminRoutes() {
     setDiffOriginalGeometry(origGeom ?? null);
     setGeomBeforeEdit(origGeom ?? null); // cancel in edit mode restores original
     setCustomGeometry(aiDiff.newGeometry);
-    const wpts = extractDenseWaypoints(aiDiff.newGeometry);
-    setWaypoints(wpts);
-    waypointsRef.current = wpts;
     setIsEditingGeometry(true);
     isEditingGeometryRef.current = true;
     setAiDiff(null);
@@ -680,28 +671,6 @@ export default function AdminRoutes() {
 
   function removeStop(id: string) {
     setStops(prev => prev.filter(s => s.id !== id));
-  }
-
-  // ── Waypoint helpers ───────────────────────────────────────────────────────
-
-  // Dense waypoints — one point every ~spacingM meters (street-level granularity)
-  function extractDenseWaypoints(geometry: [number, number][], spacingM = 150): [number, number][] {
-    if (geometry.length <= 2) return [...geometry];
-    const result: [number, number][] = [geometry[0]];
-    let acc = 0;
-    for (let i = 1; i < geometry.length; i++) {
-      const dLat = (geometry[i][0] - geometry[i-1][0]) * Math.PI / 180;
-      const dLng = (geometry[i][1] - geometry[i-1][1]) * Math.PI / 180;
-      const a = Math.sin(dLat/2)**2 + Math.cos(geometry[i-1][0]*Math.PI/180)*Math.cos(geometry[i][0]*Math.PI/180)*Math.sin(dLng/2)**2;
-      acc += 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      if (acc >= spacingM) {
-        result.push(geometry[i]);
-        acc = 0;
-      }
-    }
-    const last = geometry[geometry.length - 1];
-    if (haversineM(result[result.length - 1], last) > 20) result.push(last);
-    return result;
   }
 
   // Keep customGeometryRef in sync so event handlers inside the map useEffect always read current value
@@ -2082,9 +2051,6 @@ export default function AdminRoutes() {
                           <button
                             onClick={() => {
                               setCustomGeometry(osrmGeometry);
-                              const wpts = osrmGeometry ? extractDenseWaypoints(osrmGeometry) : [];
-                              setWaypoints(wpts);
-                              waypointsRef.current = wpts;
                             }}
                             disabled={snapping || isSegEraseMode}
                             className="w-full text-xs bg-gray-600 hover:bg-gray-500 disabled:opacity-50 text-gray-200 font-medium px-3 py-2 rounded-lg transition-colors"
@@ -2100,12 +2066,6 @@ export default function AdminRoutes() {
                                 onClick={() => {
                                   setIsSegEraseMode(false);
                                   isSegEraseModeRef.current = false;
-                                  // Re-extract waypoints from the (possibly shorter) geometry so edit mode is fresh
-                                  if (customGeometry && customGeometry.length >= 2) {
-                                    const wpts = extractDenseWaypoints(customGeometry);
-                                    setWaypoints(wpts);
-                                    waypointsRef.current = wpts;
-                                  }
                                 }}
                                 className="w-full text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 font-medium px-3 py-2 rounded-lg transition-colors"
                               >
@@ -2129,8 +2089,6 @@ export default function AdminRoutes() {
                               onClick={() => {
                                 setIsEditingGeometry(false);
                                 isEditingGeometryRef.current = false;
-                                setWaypoints(null);
-                                waypointsRef.current = null;
                                 setIsSegEraseMode(false);
                                 isSegEraseModeRef.current = false;
                                 setDiffConfirmMode(true);
@@ -2151,8 +2109,6 @@ export default function AdminRoutes() {
                             onClick={() => {
                               setCustomGeometry(geomBeforeEdit);
                               setIsEditingGeometry(false);
-                              setWaypoints(null);
-                              waypointsRef.current = null;
                               setDiffOriginalGeometry(null);
                               setIsSegEraseMode(false);
                               isSegEraseModeRef.current = false;
@@ -2166,9 +2122,6 @@ export default function AdminRoutes() {
                         <button
                           onClick={() => {
                             setGeomBeforeEdit(customGeometry);
-                            const wpts = customGeometry ? extractDenseWaypoints(customGeometry) : [];
-                            setWaypoints(wpts);
-                            waypointsRef.current = wpts;
                             setIsEditingGeometry(true);
                           }}
                           className="w-full text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 font-medium px-3 py-2 rounded-lg transition-colors"
@@ -2235,9 +2188,6 @@ export default function AdminRoutes() {
                               onClick={() => {
                                 setDiffConfirmMode(false);
                                 // Re-enter edit mode with current geometry
-                                const wpts = customGeometry ? extractDenseWaypoints(customGeometry) : [];
-                                setWaypoints(wpts);
-                                waypointsRef.current = wpts;
                                 setIsEditingGeometry(true);
                                 isEditingGeometryRef.current = true;
                               }}
