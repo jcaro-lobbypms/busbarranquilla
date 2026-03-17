@@ -27,7 +27,6 @@ class ReportMarkerLayer extends StatelessWidget {
     'lleno': AppColors.error,
     'bus_full': AppColors.error,
     'bus_disponible': AppColors.success,
-    'sin_parar': AppColors.primaryDark,
     'no_service': AppColors.primaryDark,
     'desvio': AppColors.primary,
     'detour': AppColors.primary,

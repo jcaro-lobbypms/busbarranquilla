@@ -29,7 +29,6 @@ const REPORT_LABELS: Record<string, string> = {
   bus_disponible: '🟢 Bus con sillas disponibles en tu ruta',
   desvio: '⚠️ Desvío reportado en tu ruta',
   no_service: '🚫 Sin servicio reportado en tu ruta',
-  sin_parar: '🚌 Bus sin parar reportado en tu ruta',
   espera: '⏱ Espera larga reportada en tu ruta',
 };
 

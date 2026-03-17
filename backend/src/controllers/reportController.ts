@@ -7,7 +7,7 @@ import { sendPushToUsers, sendPushToUser, REPORT_LABELS } from '../services/push
 
 const VALID_TYPES = [
   'bus_location', 'traffic', 'bus_full', 'no_service', 'detour',
-  'desvio', 'trancon', 'lleno', 'sin_parar', 'espera',
+  'desvio', 'trancon', 'lleno', 'espera',
   'bus_disponible',
 ] as const;
 
@@ -20,7 +20,6 @@ const CREDITS_BY_TYPE: Record<string, number> = {
   desvio: 4,
   trancon: 4,
   lleno: 3,
-  sin_parar: 4,
   espera: 3,
   bus_disponible: 3,
 };

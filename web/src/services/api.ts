@@ -186,7 +186,7 @@ export const adminApi = {
 
 export type ReportType =
   | 'bus_location' | 'traffic' | 'bus_full' | 'no_service' | 'detour'
-  | 'desvio' | 'trancon' | 'lleno' | 'sin_parar' | 'espera'
+  | 'desvio' | 'trancon' | 'lleno' | 'espera'
   | 'bus_disponible';
 
 export type OccupancyState = 'lleno' | 'disponible' | null;

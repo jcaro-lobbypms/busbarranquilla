@@ -34,7 +34,6 @@ interface Props {
   boardingDistanceMeters: number | null;
   showBoardConfirm: boolean;
   tripLoading: boolean;
-  onWaitReportNoStop: () => void;
   onWaitReportCrowded: () => void;
   onRequestBoardConfirm: () => void;
   onCancelWaiting: () => void;
@@ -51,7 +50,6 @@ export default function CatchBusWaiting({
   boardingDistanceMeters,
   showBoardConfirm,
   tripLoading,
-  onWaitReportNoStop,
   onWaitReportCrowded,
   onRequestBoardConfirm,
   onCancelWaiting,
@@ -125,12 +123,6 @@ export default function CatchBusWaiting({
       </div>
 
       <div className="flex gap-2">
-        <button
-          onClick={onWaitReportNoStop}
-          className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium py-2.5 rounded-xl transition-colors"
-        >
-          🚫 El bus pasó sin parar
-        </button>
         <button
           onClick={onWaitReportCrowded}
           className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium py-2.5 rounded-xl transition-colors"

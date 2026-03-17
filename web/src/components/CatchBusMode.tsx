@@ -952,7 +952,7 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
   };
 
   // ── Wait reports (waiting view) ───────────────────────────────────────
-  const handleWaitReport = async (type: 'sin_parar' | 'espera', credits: number) => {
+  const handleWaitReport = async (type: 'espera', credits: number) => {
     const pos = userPositionRef.current;
     if (!pos) { showToast('Sin GPS para reportar'); return; }
     try {
@@ -1233,7 +1233,6 @@ export default function CatchBusMode({ userPosition, onTripChange, onRouteGeomet
         boardingDistanceMeters={boardingDistanceMeters}
         showBoardConfirm={showBoardConfirm}
         tripLoading={tripLoading}
-        onWaitReportNoStop={() => handleWaitReport('sin_parar', 4)}
         onWaitReportCrowded={() => handleWaitReport('espera', 3)}
         onRequestBoardConfirm={() => setShowBoardConfirm(true)}
         onCancelWaiting={() => { setBoardingDistanceWarning(null); setShowBoardConfirm(false); setSelectedRoute(null); setView('list'); onRouteGeometry?.(null); onBoardingStop?.(null); setBoardingStop(null); }}

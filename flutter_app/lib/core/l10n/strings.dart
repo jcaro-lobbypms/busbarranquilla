@@ -79,7 +79,6 @@ abstract final class AppStrings {
     'trancon': '🚗 Trancón',
     'lleno': '🔴 Bus lleno',
     'bus_disponible': '🟢 Hay sillas',
-    'sin_parar': '⚠️ Sin parar en parada',
     'desvio': '🔀 Desvío',
     'ruta_real': '🗺️ Ruta diferente al mapa',
   };

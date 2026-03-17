@@ -1016,7 +1016,7 @@ export default function PlanTripMode({
 
             const REPORT_LABELS: Record<string, string> = {
               trancon: '🚧 Trancón', lleno: '🔴 Bus lleno', bus_disponible: '🟢 Hay sillas',
-              desvio: '↩️ Desvío', sin_parar: '🚌 No paró', espera: '⏳ Mucha espera',
+              desvio: '↩️ Desvío', espera: '⏳ Mucha espera',
               traffic: '🚧 Trancón', bus_full: '🔴 Bus lleno', no_service: '⛔ Sin servicio',
             };
 

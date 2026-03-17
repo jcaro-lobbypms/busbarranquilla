@@ -68,7 +68,6 @@ const REPORT_TYPE_LABEL: Record<string, { emoji: string; label: string }> = {
   trancon: { emoji: '🚦', label: 'Trancón' },
   lleno: { emoji: '🔴', label: 'Bus lleno' },
   bus_disponible: { emoji: '🟢', label: 'Hay sillas' },
-  sin_parar: { emoji: '🚫', label: 'No paró' },
   espera: { emoji: '⏱️', label: 'Larga espera' },
 };
 
