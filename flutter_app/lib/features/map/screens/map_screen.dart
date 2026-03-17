@@ -74,13 +74,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
   // ── Auto-boarding — Mecanismo 2 y 3 (GPS propio sobre geometría) ──────────
   LatLng? _waitingStartPosition; // GPS al activar modo espera
-  DateTime? _onRouteStart; // inicio de período "sobre la ruta" (M2)
   DateTime? _offRouteStart; // inicio de período "fuera de ruta" (M3)
   Timer? _gpsMovementTimer; // tick cada 30s para M2 y M3
-  LatLng? _userPosAtOnRouteStart; // GPS usuario cuando _onRouteStart se asignó
   LatLng? _userPosAtOffRouteStart; // GPS usuario cuando _offRouteStart se asignó
-  bool _slowAlertShown = false; // evita mostrar el diálogo M4 repetidamente
   bool _farAlertShown = false; // evita mostrar el diálogo M5 repetidamente
+  bool _cogiOtroShown = false; // evita mostrar el diálogo de "¿Cogiste otro bus?" dos veces
 
   // ── Compartido ────────────────────────────────────────────────────────────
   bool _autoboardPending = false; // bloquea doble disparo
@@ -162,9 +160,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     _autoboardPending = false;
     _autoboardUndoTimer?.cancel();
     _waitingStartPosition = _livePosition;
-    _userPosAtOnRouteStart = null;
     _userPosAtOffRouteStart = null;
-    _slowAlertShown = false;
+    _cogiOtroShown = false;
     _farAlertShown = false;
     _startGpsMovementMonitor(route);
     // Switch to a background-capable position stream so the GPS movement timers
@@ -193,11 +190,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     _autoboardUndoTimer?.cancel();
     _gpsMovementTimer?.cancel();
     _waitingStartPosition = null;
-    _onRouteStart = null;
     _offRouteStart = null;
-    _userPosAtOnRouteStart = null;
     _userPosAtOffRouteStart = null;
-    _slowAlertShown = false;
+    _cogiOtroShown = false;
     _farAlertShown = false;
     // Revert to the regular foreground stream — no need for background updates
     // once the user is no longer in waiting mode.
@@ -293,13 +288,12 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
   void _startGpsMovementMonitor(BusRoute route) {
     _gpsMovementTimer?.cancel();
-    _onRouteStart = null;
     _offRouteStart = null;
 
     if (route.geometry.isEmpty) return;
 
-    _gpsMovementTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (_autoboardPending) return;
+    _gpsMovementTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (_autoboardPending || _cogiOtroShown) return;
       if (ref.read(tripNotifierProvider) is! TripIdle) return;
 
       final userPos = _livePosition;
@@ -313,61 +307,15 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         userPos.longitude,
       );
 
-      if (distFromStart < 200) {
-        _onRouteStart = null;
-        _offRouteStart = null;
+      if (distFromStart >= 100) {
+        _cogiOtroShown = true;
+        if (mounted) _showCogiotroDialog(route, userPos);
         return;
       }
 
       final distToRoute = _distToRouteGeometry(userPos, route.geometry);
 
-      if (distToRoute < 150) {
-        _offRouteStart = null;
-        _userPosAtOffRouteStart = null;
-        _farAlertShown = false;
-
-        if (_onRouteStart == null) {
-          _onRouteStart = DateTime.now();
-          _userPosAtOnRouteStart = userPos;
-          return;
-        }
-
-        final onRouteElapsed = DateTime.now().difference(_onRouteStart!);
-
-        final distFromOnRouteStart = _userPosAtOnRouteStart != null
-            ? LocationService.distanceMeters(
-                _userPosAtOnRouteStart!.latitude,
-                _userPosAtOnRouteStart!.longitude,
-                userPos.latitude,
-                userPos.longitude,
-              )
-            : distFromStart;
-
-        final elapsedSec = onRouteElapsed.inSeconds.toDouble();
-        final speedKmh = elapsedSec > 0 ? (distFromOnRouteStart / elapsedSec) * 3.6 : 0.0;
-
-        if (speedKmh >= 10 && onRouteElapsed >= const Duration(minutes: 4)) {
-          _triggerAutoBoarding(route);
-          return;
-        }
-
-        if (speedKmh < 10 &&
-            distFromOnRouteStart >= 200 &&
-            onRouteElapsed >= const Duration(minutes: 8) &&
-            !_slowAlertShown) {
-          _slowAlertShown = true;
-          _onRouteStart = null;
-          _userPosAtOnRouteStart = null;
-          if (mounted) _showSlowOnRouteDialog(route);
-          return;
-        }
-      }
-
       if (distToRoute > 300) {
-        _onRouteStart = null;
-        _userPosAtOnRouteStart = null;
-        _slowAlertShown = false;
-
         if (_offRouteStart == null) {
           _offRouteStart = DateTime.now();
           _userPosAtOffRouteStart = userPos;
@@ -386,7 +334,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             : distFromStart;
 
         final elapsedSec = offRouteElapsed.inSeconds.toDouble();
-        final speedKmh = elapsedSec > 0 ? (distFromOffRouteStart / elapsedSec) * 3.6 : 0.0;
+        final speedKmh =
+            elapsedSec > 0 ? (distFromOffRouteStart / elapsedSec) * 3.6 : 0.0;
 
         if (speedKmh >= 10 && offRouteElapsed >= const Duration(minutes: 4)) {
           _gpsMovementTimer?.cancel();
@@ -407,6 +356,10 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           if (mounted) _showFarOffRouteDialog();
           return;
         }
+      } else {
+        _offRouteStart = null;
+        _userPosAtOffRouteStart = null;
+        _farAlertShown = false;
       }
     });
   }
@@ -459,46 +412,6 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     });
   }
 
-  void _showSlowOnRouteDialog(BusRoute route) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text(AppStrings.waitingSlowOnRouteTitle),
-        content: const Text(AppStrings.waitingSlowOnRouteBody),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              setState(() => _slowAlertShown = false);
-            },
-            child: const Text(AppStrings.waitingSlowOnRouteNo),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              showModalBottomSheet<void>(
-                context: context,
-                isScrollControlled: true,
-                shape: const RoundedRectangleBorder(
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-                ),
-                builder: (_) => const QuickBoardSheet(),
-              );
-            },
-            child: const Text(AppStrings.waitingSlowOnRouteOther),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              _triggerAutoBoarding(route);
-            },
-            child: Text('${AppStrings.waitingSlowOnRouteYes}${route.code}'),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showFarOffRouteDialog() {
     showDialog<void>(
       context: context,
@@ -523,6 +436,58 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         ],
       ),
     );
+  }
+
+  void _showCogiotroDialog(BusRoute route, LatLng currentPos) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: const Text(AppStrings.waitingCogiotroTitle),
+        content: Text(
+          '${AppStrings.waitingCogiotroBody} ${route.code}?',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              if (mounted) {
+                setState(() {
+                  _waitingStartPosition = currentPos;
+                  _cogiOtroShown = false;
+                });
+              }
+            },
+            child: const Text(AppStrings.waitingCogiotroNo),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              if (mounted) setState(() => _cogiOtroShown = false);
+              ref.read(selectedWaitingRouteProvider.notifier).state = null;
+              if (mounted) {
+                showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                  ),
+                  builder: (_) => const QuickBoardSheet(),
+                );
+              }
+            },
+            child: const Text(AppStrings.waitingCogiotroYes),
+          ),
+        ],
+      ),
+    ).then((_) {
+      if (mounted && _cogiOtroShown) {
+        setState(() {
+          _waitingStartPosition = currentPos;
+          _cogiOtroShown = false;
+        });
+      }
+    });
   }
 
   void _onSocketBusLocation(dynamic data) {
@@ -1010,7 +975,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           : FloatingActionButton.extended(
               onPressed: () => context.go('/trip/boarding'),
               backgroundColor: AppColors.primary,
-              label: const Text(AppStrings.boardedButton),
+              label: const Text(AppStrings.mapBoardFab),
               icon: const Icon(Icons.directions_bus),
             ),
     );

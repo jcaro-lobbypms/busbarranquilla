@@ -525,7 +525,7 @@ SnackbarType.info
 ```
 
 ### Flutter — Diálogo de desvío (4 opciones)
-Cuando el `DesvioMonitor` detecta que el bus se alejó ≥100m de la ruta por ≥60s, muestra un `AlertDialog` con:
+Cuando el `DesvioMonitor` detecta que el bus está fuera de ruta (ver umbrales en sección Spec 39 abajo), muestra un `AlertDialog` con:
 1. 🟠 **Desvío temporal (trancón)** — `createReport('desvio')` — reporte normal 30 min, no alerta admin
 2. 🔴 **La ruta del bus es diferente al mapa** — `notifier.reportRutaReal()` con validación inteligente (ver abajo)
 3. **Ignorar 5 min** (outlined) — pausa el monitor
@@ -856,32 +856,59 @@ Cuando el usuario está en `BoardingScreen` y toca `RoutePreviewSheet`, puede el
 
 ---
 
-### Flutter — Auto-boarding inteligente (Spec 35) + Alertas inteligentes en espera (Spec 36)
+### Flutter — Auto-boarding inteligente (Spec 35, 36, 40)
 
-**Auto-boarding — 3 mecanismos en `map_screen.dart`:**
+**Auto-boarding — 2 mecanismos activos en `map_screen.dart`:**
 - **M1 (socket co-movimiento):** detecta co-movimiento <40m con otro pasajero durante ≥3 min + ambos movidos ≥100m → dispara `_triggerAutoBoarding()`
-- **M2 (GPS on-route):** timer 30s — si usuario está <150m de geometría + ≥200m desde inicio + velocidad ≥10 km/h durante ≥4 min → auto-boarding
-- **M3 (GPS off-route → auto-cancelar espera):** mismo timer — si >300m de geometría + velocidad ≥10 km/h por ≥4 min → cancela modo espera con snackbar
-- **M4 (GPS on-route lento):** si velocidad <10 km/h en ruta por ≥8 min → dialog "¿Ya te subiste al bus?" con 3 opciones: Sí (quick board sheet), Cogí otro, Sigo esperando
+- **M2/M4 eliminados (Spec 40):** reemplazados por check de 100 m (ver abajo)
+- **M3 (GPS off-route → auto-cancelar espera):** timer 15s — si >300m de geometría + velocidad ≥10 km/h por ≥4 min → cancela modo espera con snackbar
 - **M5 (GPS off-route lento + >1km):** si >1km de inicio + velocidad <10 km/h + off-route por ≥5 min → dialog "¿Sigues esperando?"
 - `_triggerAutoBoarding()` muestra SnackBar con SnackBarAction "Deshacer" (8s), luego llama `startTrip()` → `context.go('/trip')`
-- `QuickBoardSheet` — `DraggableScrollableSheet` con lista de rutas + buscador, llama `startTrip()` directamente
+
+**Check "¿Cogiste otro bus?" — 100 m (Spec 40):**
+- Timer cada **15 s**: si `distFromWaitingStart ≥ 100 m` → `_showCogiotroDialog(route, currentPos)`
+- "No, sigo esperando" → `_waitingStartPosition = currentPos` (reset de ancla) + `_cogiOtroShown = false`
+- "Sí, cogí otro" → cancela modo espera + abre `QuickBoardSheet`
+- Tap fuera del dialog → trata como "No" (reset ancla)
+- Reemplaza M2 (velocidad) y M4 (on-route lento) — captura buses lentos y rápidos sin depender de velocidad
 
 **Waiting mode — mejoras de robustez:**
 - **Background location:** `_startWaiting()` llama `_startPositionStream(background: true)` → usa `LocationService.backgroundPositionStream` (ForegroundService Android, background updates iOS). `_stopWaiting()` revierte con `_startPositionStream()`.
 - **Indicador visual en banner:** `_WaitingBanner` recibe `monitoringActive` → muestra chip verde "Monitoreando tu posición" bajo la ETA cuando el GPS timer está activo.
 - **QuickBoardSheet error state:** si `list()` falla → muestra ícono wifi_off + texto + botón "Reintentar" que relanza `_loadRoutes()`.
 
-**Campos de estado agregados en `_MapScreenState`:**
+**Campos de estado en `_MapScreenState`:**
 ```
 _autoboardProximityStart, _autoboardUserPosAtStart, _autoboardBusPosAtStart, _autoboardAnchorTripId
-_waitingStartPosition, _onRouteStart, _offRouteStart, _gpsMovementTimer
-_userPosAtOnRouteStart, _userPosAtOffRouteStart, _slowAlertShown, _farAlertShown
+_waitingStartPosition, _offRouteStart, _gpsMovementTimer
+_userPosAtOffRouteStart, _farAlertShown, _cogiOtroShown
 _autoboardPending, _autoboardUndoTimer
 ```
 
-**Nuevas strings en `AppStrings`:**
-`autoboardDetected`, `autoboardUndo`, `autoboardCancelled`, `waitingAutoCancelled`, `waitingSlowOnRoute*`, `waitingFarOffRoute*`, `quickBoardTitle`, `quickBoardSearchHint`, `quickBoardLoadError`, `quickBoardRetry`, `waitingMonitorLabel`
+**Strings en `AppStrings`:**
+`autoboardDetected`, `autoboardUndo`, `autoboardCancelled`, `waitingAutoCancelled`, `waitingFarOffRoute*`, `waitingCogiotroTitle`, `waitingCogiotroBody`, `waitingCogiotroYes`, `waitingCogiotroNo`, `quickBoardTitle`, `quickBoardSearchHint`, `quickBoardLoadError`, `quickBoardRetry`, `waitingMonitorLabel`
+
+---
+
+### Flutter — DesvioMonitor mejorado (Spec 39)
+
+**Detección por zona:**
+- `rawDist ≤ 20 m` → en ruta, sin acción
+- `20–100 m` (zona gris) → llama OSRM `/nearest/v1/driving/{lng},{lat}` (timeout 5s) → snapea GPS a calle real → si `snapDist ≤ 20 m` a polilínea: en ruta. Si `snapDist > 20 m`: fuera de ruta. Red error → trata como fuera de ruta (conservador)
+- `> 100 m` → fuera de ruta directo, sin llamada OSRM
+- Umbral sostenido: **15 s** (antes 30 s). Detecta calle paralela a ~80 m en 15–30 s.
+
+**Confirmación periódica post-`ruta_real` (Spec 39, paso 3–7):**
+- Tras confirmar "ruta diferente al mapa": `onDesvio` y push notification quedan suprimidos
+- Cada **10 min** → `onConfirmDeviating` → bottom sheet "¿Sigues en ruta diferente?" (sin push)
+  - "Sí, sigue" → `acknowledgeConfirmation()` → reinicia intervalo 10 min
+  - "No, ya regresó" → `resetEpisode()` → cierra episodio
+  - Sin respuesta en 60 s → auto-acknowledge (conservador)
+- `_deviationReEntryTimer` (15 s) sigue activo → si GPS re-entra a ruta → `onReturnToRoute` → cierra episodio automáticamente
+- Nuevos campos en `TripActive`: `desvioConfirmPending`
+- Nuevo método `TripNotifier`: `acknowledgeDesvioConfirm()`, `resetDesvioConfirm()`
+
+**Ícono destino activo trip:** `Icons.where_to_vote` (antes `flag_outlined`) — más reconocible como "confirmar destino"
 
 ---
 
@@ -895,4 +922,6 @@ _autoboardPending, _autoboardUndoTimer
 3. **`routeUpdateController.ts` `getRouteUpdateAlerts`** — añade query a tabla `reports` para `type = 'desvio'` de los últimos 30 días. Devuelve `desvio_episodes[]` con `{id, lat, lng, created_at, resolved_at, duration_minutes, reporter_name}`.
 4. **`AdminRouteAlerts.tsx`** — nueva interfaz `DesvioEpisode`; badge morado "N episodios de desvío" en cabecera; tabla "Episodios de desvío registrados" con pasajero/inicio/duración/estado; marcadores morados en mini-mapa con tooltip.
 
-*Última actualización: 2026-03-16 (v29)*
+**FAB mapa:** `AppStrings.mapBoardFab = 'Tomar bus'` (antes `boardedButton = 'Me subí'`). `boardedButton` se conserva para el botón de confirmación en `BoardingConfirmScreen`. `helpTripTitle` actualizado a `'Cómo funciona "Tomar bus"'`.
+
+*Última actualización: 2026-03-17 (v31)*

@@ -58,6 +58,7 @@ abstract final class AppStrings {
   static const tabTrip = 'Viaje';
   static const tabProfile = 'Perfil';
 
+  static const mapBoardFab = 'Tomar bus';
   static const boardedButton = 'Me subí';
   static const boardedWaitingButton = '¡Ya me subí!';
   static const alightedButton = 'Me bajé';
@@ -330,6 +331,11 @@ abstract final class AppStrings {
       'Te has alejado más de 1 km de la ruta. ¿Todavía quieres tomar este bus?';
   static const waitingFarOffRouteContinue = 'Sigo esperando';
   static const waitingFarOffRouteCancel = 'Ya no voy a tomarlo';
+  static const waitingCogiotroTitle = '¿Cogiste otro bus?';
+  static const waitingCogiotroBody =
+      'Te moviste más de 100 m. ¿Subiste a un bus diferente al';
+  static const waitingCogiotroYes = 'Sí, cogí otro';
+  static const waitingCogiotroNo = 'No, sigo esperando';
 
   static const quickBoardTitle = 'Selecciona tu bus';
   static const quickBoardSearchHint = 'Buscar ruta...';
@@ -381,7 +387,7 @@ abstract final class AppStrings {
   static const helpChangelogSubtitle = 'Últimas funciones que agregamos a la app';
   static const helpMapTitle = 'La pestaña Mapa';
   static const helpPlannerTitle = 'La pestaña Mis Rutas';
-  static const helpTripTitle = 'Cómo funciona "Me subí"';
+  static const helpTripTitle = 'Cómo funciona "Tomar bus"';
   static const helpCreditsTitle = 'Sistema de créditos';
   static const helpPremiumTitle = 'MiBus Premium';
 }

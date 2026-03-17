@@ -899,7 +899,7 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen>
                   backgroundColor: Colors.white,
                   tooltip: AppStrings.tripChangeDestination,
                   onPressed: () => _changeDestination(),
-                  child: const Icon(Icons.flag_outlined, color: AppColors.accent),
+                  child: const Icon(Icons.where_to_vote, color: AppColors.accent),
                 ),
                 const SizedBox(height: 8),
                 FloatingActionButton.small(
