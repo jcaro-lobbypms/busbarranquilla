@@ -277,13 +277,18 @@ export const createReport = async (req: Request, res: Response): Promise<void> =
 
       // Push a otros pasajeros activos en la misma ruta (app en background)
       const othersRes = await pool.query(
-        `SELECT u.fcm_token FROM active_trips t
+        `SELECT u.fcm_token, u.notification_prefs FROM active_trips t
          JOIN users u ON u.id = t.user_id
          WHERE t.route_id = $1 AND t.is_active = true
            AND t.user_id != $2 AND u.fcm_token IS NOT NULL`,
         [route_id, userId],
       );
-      const tokens = othersRes.rows.map((r: { fcm_token: string }) => r.fcm_token);
+      const tokens = othersRes.rows
+        .filter((r: { fcm_token: string; notification_prefs: Record<string, unknown> | null }) => {
+          const prefs: Record<string, unknown> = r.notification_prefs ?? {};
+          return prefs.routeReports !== false;
+        })
+        .map((r: { fcm_token: string }) => r.fcm_token);
       const label = REPORT_LABELS[type] ?? `Nuevo reporte: ${type}`;
       void sendPushToUsers(tokens, '🚌 MiBus', label, {
         type: 'report',
@@ -399,12 +404,17 @@ export const resolveReport = async (req: Request, res: Response): Promise<void> 
       // Push a pasajeros activos en la ruta (app en background)
       if (report.type === 'trancon') {
         const passengersRes = await pool.query(
-          `SELECT u.fcm_token FROM active_trips t
+          `SELECT u.fcm_token, u.notification_prefs FROM active_trips t
            JOIN users u ON u.id = t.user_id
            WHERE t.route_id = $1 AND t.is_active = true AND u.fcm_token IS NOT NULL`,
           [report.route_id],
         );
-        const tokens = passengersRes.rows.map((r: { fcm_token: string }) => r.fcm_token);
+        const tokens = passengersRes.rows
+          .filter((r: { fcm_token: string; notification_prefs: Record<string, unknown> | null }) => {
+            const prefs: Record<string, unknown> = r.notification_prefs ?? {};
+            return prefs.routeReports !== false;
+          })
+          .map((r: { fcm_token: string }) => r.fcm_token);
         void sendPushToUsers(tokens, '✅ Trancón despejado', `El trancón en tu ruta fue resuelto en ${durationMinutes} min`, {
           type: 'report_resolved',
           routeId: String(report.route_id),
@@ -529,6 +539,26 @@ export const confirmReport = async (req: Request, res: Response): Promise<void> 
         needed_confirmations: needed,
         reporter_paid: reporterPaid,
       });
+    }
+
+    const reporterRes = await pool.query(
+      `SELECT u.fcm_token, u.notification_prefs
+       FROM reports r
+       JOIN users u ON u.id = r.user_id
+       WHERE r.id = $1`,
+      [id],
+    );
+    if (reporterRes.rows.length > 0) {
+      const reporter = reporterRes.rows[0];
+      const prefs: Record<string, unknown> = reporter.notification_prefs ?? {};
+      if (prefs.routeReports !== false) {
+        void sendPushToUser(
+          reporter.fcm_token as string | null,
+          '👍 Tu reporte fue confirmado',
+          'Otro pasajero confirmó tu reporte en la ruta',
+          { type: 'report_confirmed', reportId: String(id) },
+        );
+      }
     }
 
     res.json({

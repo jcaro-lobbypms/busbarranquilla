@@ -653,6 +653,7 @@ Specs are numbered markdown files describing feature implementations for Codex:
 | 39 | DesvioMonitor mejorado — zona gris 20–100m con OSRM snap, umbral 30m, sostenido 15s; confirmación periódica post-ruta_real cada 10min (onConfirmDeviating + desvioConfirmPending) |
 | 40 | Waiting mode cogiotro — elimina M2/M4, reemplaza con check 100m → dialog "¿Cogiste otro bus?"; timer 15s; reset de ancla al decir "No"; ícono destino → Icons.where_to_vote |
 | 41 | Auto-reporte ruta diferente al cerrar viaje — `gps_trace` en `active_trips`, detección por clústeres en `endTrip`, eliminación de UNIQUE(route_id,user_id) en `route_update_reports`; card naranja en resumen de viaje (sin mapa, solo texto de confirmación) |
+| 42 | Push notifications completas desde backend — `boarding_alert_prepare_sent` + `boarding_alert_now_sent` en `active_trips`; alertas de bajada 400m/200m en `updateLocation` con try/catch aislado; enforcement de `notification_prefs` en todos los push existentes; push al reportante al confirmar su reporte |
 
 **When writing new specs for Codex:**
 - Reference existing file paths and widget/class names exactly
@@ -696,7 +697,7 @@ Specs are numbered markdown files describing feature implementations for Codex:
 
 ### active_trips
 `id, user_id, route_id, current_latitude, current_longitude, destination_stop_id, started_at, last_location_at, ended_at, credits_earned, is_active`
-**Migrations added:** `total_distance_meters DECIMAL(10,2) DEFAULT 0` — accumulated on every `updateLocation` call via Haversine; used to gate the +5 completion bonus (requires ≥2 km)
+**Migrations added:** `total_distance_meters DECIMAL(10,2) DEFAULT 0` — accumulated on every `updateLocation` call via Haversine; used to gate the +5 completion bonus (requires ≥2 km). `gps_trace JSONB DEFAULT '[]'` — max 500 GPS points, used for cluster-based deviation detection in `endTrip`. `boarding_alert_prepare_sent BOOLEAN DEFAULT FALSE` + `boarding_alert_now_sent BOOLEAN DEFAULT FALSE` — prevent duplicate boarding alert pushes (400 m / 200 m) from `updateLocation`.
 
 ### user_favorite_routes
 `id, user_id (→ users), route_id (→ routes), created_at` — `UNIQUE(user_id, route_id)`

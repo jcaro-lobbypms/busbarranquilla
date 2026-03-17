@@ -623,7 +623,7 @@ Vibration.vibrate(
 - Sistema anti-fraude: cooldown 5 min entre viajes, bono completar ≥2 km, `suspicious_minutes` (inactividad 30min → cierre automático descontando minutos sospechosos)
 - **DesvíoMonitor unificado**: umbral 100m / 60s en ambas ramas (geometría y paradas fallback)
 - **Planner nearby auto-refresh**: `Timer.periodic(2 min)` en `PlannerNotifier` cuando origen es GPS, cancelado al cambiar a dirección tipificada o al hacer `reset()`
-- **Firebase Cloud Messaging (push notifications)**: `firebase_core ^3.6.0` + `firebase_messaging ^15.1.3` en Flutter; `firebase-admin ^12.7.0` en backend; `NotificationService` en `core/notifications/`; token FCM guardado en `users.fcm_token`; `PATCH /api/auth/fcm-token` (auth); push en: reporte creado (→ pasajeros activos en la ruta), trancón resuelto (→ pasajeros activos), viaje finalizado (→ usuario); tap en notif navega a `/trip` o `/profile/trips` según tipo
+- **Firebase Cloud Messaging (push notifications)**: `firebase_core ^3.6.0` + `firebase_messaging ^15.1.3` en Flutter; `firebase-admin ^12.7.0` en backend; `NotificationService` en `core/notifications/`; token FCM guardado en `users.fcm_token`; `PATCH /api/auth/fcm-token` (auth); push en: reporte creado (→ pasajeros activos en la ruta con `routeReports !== false`), trancón resuelto (→ pasajeros activos con `routeReports !== false`), viaje finalizado (→ usuario con `boardingAlerts !== false`), reporte confirmado (→ reportante original con `routeReports !== false`), alerta de bajada 400m/200m desde backend (→ usuario con `boardingAlerts !== false`); tap en notif navega a `/trip` o `/profile/trips` según tipo; todas las pushes respetan `notification_prefs` del usuario (Spec 42)
 - Rate limiting: auth (20/15min), reports (15/5min), general (300/1min)
 - Cron zombie trips (>4h sin actualización → cerrar)
 - **Alerta de bajada — vibración real**: paquete `vibration ^2.0.0` reemplaza `HapticFeedback`; `onPrepare` a 700m (antes 400m) = 2 pulsos medios + notif push; `onAlight` a 200m = 5 pulsos máximos + notif push urgente (`fullScreenIntent`)
@@ -657,6 +657,25 @@ Vibration.vibrate(
 - Publicación en Google Play (requiere SHA-1 Firebase + signing config en release build)
 - Flujo de pago Wompi in-app (actualmente abre navegador)
 - Alianza con AMB y SIBUS Barranquilla
+
+### Push notifications completas desde backend (Spec 42)
+
+**DB:** Dos nuevas columnas en `active_trips`: `boarding_alert_prepare_sent BOOLEAN DEFAULT FALSE` y `boarding_alert_now_sent BOOLEAN DEFAULT FALSE` — evitan enviar la misma alerta de bajada dos veces aunque lleguen múltiples actualizaciones de posición.
+
+**Boarding alerts desde backend (`updateLocation`):**
+- Tras actualizar posición, si `destination_stop_id` está seteado y `boarding_alert_now_sent = false`, calcula distancia al stop destino con `haversineMeters()`
+- ≤200 m: marca `boarding_alert_now_sent = true` + envía push "🚨 Bájate ya"
+- ≤400 m y `boarding_alert_prepare_sent = false`: marca flag + envía push "⏱ Prepárate para bajar"
+- Todo el bloque corre en un `try/catch` interno después de `res.json()` — si falla, no afecta la respuesta al cliente
+- Solo se ejecuta si `notification_prefs.boardingAlerts !== false` (null = opt-in por defecto)
+
+**Enforcement de `notification_prefs` en todos los push existentes:**
+- `createReport`: filtra tokens por `routeReports !== false` antes de `sendPushToUsers`
+- `resolveReport`: ídem
+- `confirmReport`: nueva push al reportante original respetando `routeReports !== false`
+- `endTrip`: verifica `boardingAlerts !== false` antes del push de viaje finalizado
+
+**Archivos modificados:** `backend/src/config/schema.ts`, `backend/src/controllers/tripController.ts`, `backend/src/controllers/reportController.ts`
 
 ---
 
@@ -945,4 +964,4 @@ _autoboardPending, _autoboardUndoTimer
 - `_TripSummaryScreen`: si `deviationDetected`, muestra card naranja con texto `deviationReportBody` e ícono `alt_route`. Sin mapa — el usuario solo necesita saber que se registró, no ver el trazado técnico
 - String: `AppStrings.deviationReportBody`
 
-*Última actualización: 2026-03-17 (v32)*
+*Última actualización: 2026-03-17 (v33)*

@@ -303,6 +303,8 @@ const createTables = async () => {
     await pool.query(`ALTER TABLE active_trips ADD COLUMN IF NOT EXISTS custom_destination_lng DECIMAL(11,8) DEFAULT NULL`);
     await pool.query(`ALTER TABLE active_trips ADD COLUMN IF NOT EXISTS custom_destination_name TEXT DEFAULT NULL`);
     await pool.query(`ALTER TABLE active_trips ADD COLUMN IF NOT EXISTS gps_trace JSONB DEFAULT '[]'`);
+    await pool.query(`ALTER TABLE active_trips ADD COLUMN IF NOT EXISTS boarding_alert_prepare_sent BOOLEAN DEFAULT FALSE`);
+    await pool.query(`ALTER TABLE active_trips ADD COLUMN IF NOT EXISTS boarding_alert_now_sent BOOLEAN DEFAULT FALSE`);
 
     await pool.query(`
       ALTER TABLE route_update_reports

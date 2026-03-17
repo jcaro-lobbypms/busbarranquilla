@@ -209,6 +209,68 @@ export const updateLocation = async (req: Request, res: Response): Promise<void>
       credits_pending: updated.rows[0].credits_earned,
     });
 
+    try {
+      const updatedTrip = updated.rows[0];
+      if (updatedTrip.destination_stop_id && !updatedTrip.boarding_alert_now_sent) {
+        const stopRes = await pool.query(
+          'SELECT latitude, longitude FROM stops WHERE id = $1',
+          [updatedTrip.destination_stop_id],
+        );
+        if (stopRes.rows.length > 0) {
+          const stop = stopRes.rows[0];
+          const distToStop = haversineMeters(
+            parseFloat(latitude),
+            parseFloat(longitude),
+            parseFloat(stop.latitude),
+            parseFloat(stop.longitude),
+          );
+
+          if (distToStop <= 200) {
+            await pool.query(
+              'UPDATE active_trips SET boarding_alert_now_sent = true WHERE id = $1',
+              [updatedTrip.id],
+            );
+            const userRow = await pool.query(
+              'SELECT fcm_token, notification_prefs FROM users WHERE id = $1',
+              [userId],
+            );
+            const { fcm_token, notification_prefs } = userRow.rows[0] ?? {};
+            const prefs: Record<string, unknown> = notification_prefs ?? {};
+            if (prefs.boardingAlerts !== false) {
+              void sendPushToUser(
+                fcm_token as string | null,
+                '🚨 Bájate ya',
+                'Tu parada está a menos de 200 metros',
+                { type: 'boarding_alert', level: 'now' },
+              );
+            }
+          } else if (distToStop <= 400 && !updatedTrip.boarding_alert_prepare_sent) {
+            await pool.query(
+              'UPDATE active_trips SET boarding_alert_prepare_sent = true WHERE id = $1',
+              [updatedTrip.id],
+            );
+            const userRow = await pool.query(
+              'SELECT fcm_token, notification_prefs FROM users WHERE id = $1',
+              [userId],
+            );
+            const { fcm_token, notification_prefs } = userRow.rows[0] ?? {};
+            const prefs: Record<string, unknown> = notification_prefs ?? {};
+            if (prefs.boardingAlerts !== false) {
+              void sendPushToUser(
+                fcm_token as string | null,
+                '⏱ Prepárate para bajar',
+                'Tu parada está a menos de 400 metros',
+                { type: 'boarding_alert', level: 'prepare' },
+              );
+            }
+          }
+        }
+      }
+    } catch (alertErr) {
+      console.error('Error en boarding alert check:', alertErr);
+      // No re-throw — la respuesta ya fue enviada
+    }
+
   } catch (error) {
     console.error('Error actualizando ubicación:', error);
     res.status(500).json({ message: 'Error interno del servidor' });
@@ -333,17 +395,20 @@ export const endTrip = async (req: Request, res: Response): Promise<void> => {
     // Push al usuario con resumen del viaje (útil si cerró la app mientras viajaba)
     if (totalEarned > 0) {
       const userTokenRes = await pool.query(
-        'SELECT fcm_token FROM users WHERE id = $1',
+        'SELECT fcm_token, notification_prefs FROM users WHERE id = $1',
         [userId],
       );
       const fcmToken: string | null = userTokenRes.rows[0]?.fcm_token ?? null;
+      const endPrefs: Record<string, unknown> = userTokenRes.rows[0]?.notification_prefs ?? {};
       const creditWord = totalEarned === 1 ? 'crédito' : 'créditos';
-      void sendPushToUser(
-        fcmToken,
-        '🎉 Viaje finalizado',
-        `Ganaste ${totalEarned} ${creditWord} por este viaje`,
-        { type: 'trip_ended', credits: String(totalEarned) },
-      );
+      if (endPrefs.boardingAlerts !== false) {
+        void sendPushToUser(
+          fcmToken,
+          '🎉 Viaje finalizado',
+          `Ganaste ${totalEarned} ${creditWord} por este viaje`,
+          { type: 'trip_ended', credits: String(totalEarned) },
+        );
+      }
     }
 
     res.json({
