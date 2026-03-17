@@ -8,6 +8,8 @@ import 'core/notifications/notification_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  await NotificationService.initialize();
+  // Notifications are non-critical — initialize in background so runApp()
+  // is never blocked by permission dialogs or Firebase setup delays.
+  NotificationService.initialize(); // ignore: unawaited_futures
   runApp(const ProviderScope(child: MiBusApp()));
 }

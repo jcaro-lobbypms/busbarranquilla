@@ -119,6 +119,8 @@ class AuthNotifier extends Notifier<AuthState> {
 
   Future<void> _refreshFromProfile() async {
     final profile = await ref.read(authRepositoryProvider).getProfile();
+    // Guard: if state was already resolved (e.g. by a parallel call), skip.
+    if (state is! AuthLoading) return;
     state = switch (profile) {
       Success(data: final user) => Authenticated(user),
       Failure() => const Unauthenticated(),

@@ -971,4 +971,22 @@ _autoboardPending, _autoboardUndoTimer
 - `_TripSummaryScreen`: si `deviationDetected`, muestra card naranja con texto `deviationReportBody` e ícono `alt_route`. Sin mapa — el usuario solo necesita saber que se registró, no ver el trazado técnico
 - String: `AppStrings.deviationReportBody`
 
-*Última actualización: 2026-03-17 (v34)*
+---
+
+### Bug crítico resuelto: Flutter app congelada en splash (startup + post-login)
+
+**Síntoma:** App instalada desde cero (o con datos limpios) quedaba infinitamente en el splash screen ("Cargando..."). Después del login también se congelaba en splash.
+
+**Causa raíz:** `flutter_secure_storage` usa el Keystore de Android para cifrar el token JWT. En ciertos dispositivos/versiones de Android, las operaciones del Keystore (read, write) se cuelgan indefinidamente cuando el estado interno del Keystore es inconsistente — especialmente en instalaciones limpias donde los datos de SharedPreferences se borran pero las claves del Keystore persisten (o se crean nuevas). Cuando `readToken()` o `writeToken()` se colgaba, el interceptor Dio nunca llamaba `handler.next()` y el timeout de Dio nunca iniciaba → app bloqueada en `AuthLoading` → splash eterno.
+
+**Solución:** Reemplazar `flutter_secure_storage` con `SharedPreferences` para almacenar el JWT en `lib/core/storage/secure_storage.dart`. `SharedPreferences` nunca toca el Keystore de Android → cero riesgo de cuelgue. El impacto de seguridad es mínimo para este caso de uso (JWT validado server-side, expira en 30 días).
+
+**Cambios asociados:**
+- `lib/core/storage/secure_storage.dart` — `SecureStorageImpl` ahora usa `SharedPreferences.getInstance()` en lugar de `FlutterSecureStorage`; interfaz `SecureStorage` sin cambios (rest of app unaffected)
+- `lib/core/api/interceptors/auth_interceptor.dart` — `readToken().timeout(5s)` añadido como guardia adicional
+- `lib/features/auth/providers/auth_notifier.dart` — guardia `if (state is! AuthLoading) return` en `_refreshFromProfile()` para evitar race conditions
+- `lib/main.dart` — `NotificationService.initialize()` es fire-and-forget (no bloquea `runApp()`)
+
+**Nota para futuros cambios:** NO volver a `flutter_secure_storage` sin resolver el Keystore deadlock. Si se necesita cifrado real en el futuro, usar `encryptedSharedPreferences: true` con manejo de errores robusto.
+
+*Última actualización: 2026-03-17 (v35)*

@@ -1,5 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 abstract class SecureStorage {
   Future<String?> readToken();
@@ -10,20 +10,25 @@ abstract class SecureStorage {
 class SecureStorageImpl implements SecureStorage {
   static const _tokenKey = 'auth_token';
 
-  final FlutterSecureStorage _storage;
-
-  const SecureStorageImpl(this._storage);
+  @override
+  Future<String?> readToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_tokenKey);
+  }
 
   @override
-  Future<String?> readToken() => _storage.read(key: _tokenKey);
+  Future<void> writeToken(String token) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_tokenKey, token);
+  }
 
   @override
-  Future<void> writeToken(String token) => _storage.write(key: _tokenKey, value: token);
-
-  @override
-  Future<void> deleteToken() => _storage.delete(key: _tokenKey);
+  Future<void> deleteToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_tokenKey);
+  }
 }
 
 final secureStorageProvider = Provider<SecureStorage>((ref) {
-  return const SecureStorageImpl(FlutterSecureStorage());
+  return SecureStorageImpl();
 });
