@@ -9,6 +9,7 @@
       "dependencies": [
         "dio",
         "firebase_core",
+        "firebase_crashlytics",
         "firebase_messaging",
         "flutter",
         "flutter_local_notifications",
@@ -212,6 +213,17 @@
         "firebase_messaging_web",
         "flutter",
         "meta"
+      ]
+    },
+    {
+      "name": "firebase_crashlytics",
+      "version": "4.3.10",
+      "dependencies": [
+        "firebase_core",
+        "firebase_core_platform_interface",
+        "firebase_crashlytics_platform_interface",
+        "flutter",
+        "stack_trace"
       ]
     },
     {
@@ -1067,6 +1079,18 @@
         "collection",
         "flutter",
         "flutter_test",
+        "meta",
+        "plugin_platform_interface"
+      ]
+    },
+    {
+      "name": "firebase_crashlytics_platform_interface",
+      "version": "3.8.10",
+      "dependencies": [
+        "_flutterfire_internals",
+        "collection",
+        "firebase_core",
+        "flutter",
         "meta",
         "plugin_platform_interface"
       ]

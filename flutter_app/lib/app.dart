@@ -1,3 +1,4 @@
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -178,6 +179,17 @@ class _MiBusAppState extends ConsumerState<MiBusApp> {
   @override
   void initState() {
     super.initState();
+
+    // Tag Crashlytics reports with the authenticated user's ID so crashes
+    // can be filtered by account in the Firebase console.
+    ref.listen<AuthState>(authNotifierProvider, (_, next) {
+      if (next is Authenticated) {
+        FirebaseCrashlytics.instance
+            .setUserIdentifier(next.user.id.toString());
+      } else {
+        FirebaseCrashlytics.instance.setUserIdentifier('');
+      }
+    });
 
     // App opened from background by tapping a notification
     NotificationService.setOnMessageOpenedApp(_handleNotificationTap);
