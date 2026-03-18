@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
@@ -866,6 +867,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 userAgentPackageName: AppStrings.osmUserAgent,
                 keepBuffer: 3,
                 panBuffer: 1,
+                tileProvider: const FMTCStore('mapTiles').getTileProvider(
+                  settings: FMTCTileProviderSettings(
+                    cachedValidDuration: const Duration(days: 30),
+                  ),
+                ),
               ),
               // Feed route (when no active trip and not in waiting mode)
               if (!isOnTrip && selectedRoute != null && selectedRoute.geometry.isNotEmpty && waitingRoute == null)

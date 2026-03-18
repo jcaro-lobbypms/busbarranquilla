@@ -14,6 +14,7 @@
         "flutter",
         "flutter_local_notifications",
         "flutter_map",
+        "flutter_map_tile_caching",
         "flutter_riverpod",
         "flutter_secure_storage",
         "geolocator",
@@ -323,6 +324,25 @@
       "version": "0.9.1",
       "dependencies": [
         "intl"
+      ]
+    },
+    {
+      "name": "flutter_map_tile_caching",
+      "version": "9.1.4",
+      "dependencies": [
+        "async",
+        "collection",
+        "dart_earcut",
+        "flat_buffers",
+        "flutter",
+        "flutter_map",
+        "http",
+        "latlong2",
+        "meta",
+        "objectbox",
+        "objectbox_flutter_libs",
+        "path",
+        "path_provider"
       ]
     },
     {
@@ -1343,6 +1363,48 @@
       ]
     },
     {
+      "name": "path_provider",
+      "version": "2.1.5",
+      "dependencies": [
+        "flutter",
+        "path_provider_android",
+        "path_provider_foundation",
+        "path_provider_linux",
+        "path_provider_platform_interface",
+        "path_provider_windows"
+      ]
+    },
+    {
+      "name": "objectbox_flutter_libs",
+      "version": "4.3.1",
+      "dependencies": [
+        "flutter",
+        "objectbox",
+        "path_provider"
+      ]
+    },
+    {
+      "name": "objectbox",
+      "version": "4.3.1",
+      "dependencies": [
+        "collection",
+        "ffi",
+        "flat_buffers",
+        "meta",
+        "path"
+      ]
+    },
+    {
+      "name": "flat_buffers",
+      "version": "23.5.26",
+      "dependencies": []
+    },
+    {
+      "name": "dart_earcut",
+      "version": "1.2.0",
+      "dependencies": []
+    },
+    {
       "name": "proj4dart",
       "version": "2.1.0",
       "dependencies": [
@@ -1364,11 +1426,6 @@
       "dependencies": [
         "meta"
       ]
-    },
-    {
-      "name": "dart_earcut",
-      "version": "1.2.0",
-      "dependencies": []
     },
     {
       "name": "dio_web_adapter",
@@ -1598,18 +1655,6 @@
       ]
     },
     {
-      "name": "path_provider",
-      "version": "2.1.5",
-      "dependencies": [
-        "flutter",
-        "path_provider_android",
-        "path_provider_foundation",
-        "path_provider_linux",
-        "path_provider_platform_interface",
-        "path_provider_windows"
-      ]
-    },
-    {
       "name": "google_identity_services_web",
       "version": "0.3.3+1",
       "dependencies": [
@@ -1674,6 +1719,24 @@
         "path",
         "path_provider_platform_interface",
         "xdg_directories"
+      ]
+    },
+    {
+      "name": "path_provider_foundation",
+      "version": "2.6.0",
+      "dependencies": [
+        "ffi",
+        "flutter",
+        "objective_c",
+        "path_provider_platform_interface"
+      ]
+    },
+    {
+      "name": "path_provider_android",
+      "version": "2.2.22",
+      "dependencies": [
+        "flutter",
+        "path_provider_platform_interface"
       ]
     },
     {
@@ -1745,34 +1808,9 @@
       ]
     },
     {
-      "name": "path_provider_foundation",
-      "version": "2.6.0",
-      "dependencies": [
-        "ffi",
-        "flutter",
-        "objective_c",
-        "path_provider_platform_interface"
-      ]
-    },
-    {
-      "name": "path_provider_android",
-      "version": "2.2.22",
-      "dependencies": [
-        "flutter",
-        "path_provider_platform_interface"
-      ]
-    },
-    {
       "name": "platform",
       "version": "3.1.6",
       "dependencies": []
-    },
-    {
-      "name": "unicode",
-      "version": "0.3.1",
-      "dependencies": [
-        "lists"
-      ]
     },
     {
       "name": "objective_c",
@@ -1788,10 +1826,10 @@
       ]
     },
     {
-      "name": "lists",
-      "version": "1.0.1",
+      "name": "unicode",
+      "version": "0.3.1",
       "dependencies": [
-        "meta"
+        "lists"
       ]
     },
     {
@@ -1824,6 +1862,13 @@
       "dependencies": [
         "collection",
         "hooks"
+      ]
+    },
+    {
+      "name": "lists",
+      "version": "1.0.1",
+      "dependencies": [
+        "meta"
       ]
     }
   ],

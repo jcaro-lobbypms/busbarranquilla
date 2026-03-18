@@ -296,6 +296,12 @@
       "languageVersion": "3.1"
     },
     {
+      "name": "flat_buffers",
+      "rootUri": "file:///Users/jesuscaro/.pub-cache/hosted/pub.dev/flat_buffers-23.5.26",
+      "packageUri": "lib/",
+      "languageVersion": "2.12"
+    },
+    {
       "name": "flutter",
       "rootUri": "file:///Users/jesuscaro/development/flutter/packages/flutter",
       "packageUri": "lib/",
@@ -336,6 +342,12 @@
       "rootUri": "file:///Users/jesuscaro/.pub-cache/hosted/pub.dev/flutter_map-7.0.2",
       "packageUri": "lib/",
       "languageVersion": "3.0"
+    },
+    {
+      "name": "flutter_map_tile_caching",
+      "rootUri": "file:///Users/jesuscaro/.pub-cache/hosted/pub.dev/flutter_map_tile_caching-9.1.4",
+      "packageUri": "lib/",
+      "languageVersion": "3.3"
     },
     {
       "name": "flutter_native_splash",
@@ -642,6 +654,18 @@
       "rootUri": "file:///Users/jesuscaro/.pub-cache/hosted/pub.dev/native_toolchain_c-0.17.5",
       "packageUri": "lib/",
       "languageVersion": "3.10"
+    },
+    {
+      "name": "objectbox",
+      "rootUri": "file:///Users/jesuscaro/.pub-cache/hosted/pub.dev/objectbox-4.3.1",
+      "packageUri": "lib/",
+      "languageVersion": "2.17"
+    },
+    {
+      "name": "objectbox_flutter_libs",
+      "rootUri": "file:///Users/jesuscaro/.pub-cache/hosted/pub.dev/objectbox_flutter_libs-4.3.1",
+      "packageUri": "lib/",
+      "languageVersion": "2.18"
     },
     {
       "name": "objective_c",

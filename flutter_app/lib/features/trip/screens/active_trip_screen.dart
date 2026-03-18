@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
@@ -698,6 +699,11 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen>
                 userAgentPackageName: AppStrings.osmUserAgent,
                 keepBuffer: 3,
                 panBuffer: 1,
+                tileProvider: const FMTCStore('mapTiles').getTileProvider(
+                  settings: FMTCTileProviderSettings(
+                    cachedValidDuration: const Duration(days: 30),
+                  ),
+                ),
               ),
               if (active.route.geometry.isNotEmpty)
                 RoutePolylineLayer(

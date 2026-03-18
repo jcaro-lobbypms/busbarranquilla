@@ -1018,4 +1018,74 @@ _autoboardPending, _autoboardUndoTimer
 - Alerta prepararse → `payload: 'boarding_alert_prepare'`
 - Alerta bajarse → `payload: 'boarding_alert_now'`
 
-*Última actualización: 2026-03-18 (v36)*
+---
+
+## Firebase Crashlytics
+
+**Paquete:** `firebase_crashlytics ^4.1.3` (agregado a `pubspec.yaml`)
+
+**Configuración en `lib/main.dart`:**
+- `FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError` — captura errores del framework Flutter (build failures, rendering errors)
+- `PlatformDispatcher.instance.onError` — captura errores async fuera del framework (platform channel failures, isolate errors)
+- Ambos handlers solo activos en `!kDebugMode` — en debug la pantalla roja sigue funcionando normalmente
+
+**Identificador de usuario en `lib/app.dart`:**
+- `ref.listen<AuthState>(authNotifierProvider, ...)` en `_MiBusAppState.initState`
+- Cuando `Authenticated` → `FirebaseCrashlytics.instance.setUserIdentifier(user.id.toString())`
+- Cuando logout → `setUserIdentifier('')` para no contaminar sesiones cruzadas
+
+**Para ver crashes:** Firebase Console → proyecto mibus_flutter → Crashlytics. Se activa automáticamente con la primera build de release instalada en un dispositivo.
+
+---
+
+## Release signing (Spec 45)
+
+**Estado:** ✅ Configurado y verificado — APK de release generado correctamente (67.3 MB).
+
+**Archivos:**
+- `flutter_app/android/mibus-release.jks` — keystore de producción (en `.gitignore`, nunca al repo)
+- `flutter_app/android/key.properties` — credenciales del keystore (en `.gitignore`, nunca al repo)
+  - `keyAlias=mibus`, `storeFile=../mibus-release.jks`
+- `flutter_app/android/app/build.gradle.kts` — carga `key.properties` con `FileInputStream`, `signingConfigs.create("release")`, `buildTypes.release` usa `signingConfigs.getByName("release")`
+
+**Builds de producción:**
+```bash
+# APK (instalación directa / sideload)
+~/development/flutter/bin/flutter build apk --release
+# → build/app/outputs/flutter-apk/app-release.apk
+
+# AAB (Google Play — recomendado, menor descarga)
+~/development/flutter/bin/flutter build appbundle --release
+# → build/app/outputs/bundle/release/app-release.aab
+```
+
+**Para CI/CD futuro:** inyectar las credenciales del keystore como variables de entorno y escribir `key.properties` antes de compilar.
+
+---
+
+## Map tile caching (Spec 46)
+
+**Paquete:** `flutter_map_tile_caching: ^9.1.0`
+
+**Inicialización en `lib/main.dart`** (antes de `runApp`):
+```dart
+await FMTCObjectBoxBackend().initialise();
+const store = FMTCStore('mapTiles');
+if (!await store.manage.ready) await store.manage.create();
+```
+
+**Comportamiento:**
+- Tiles se guardan en disco la primera vez que se cargan (ObjectBox, directorio privado de la app)
+- En visitas posteriores a la misma zona se sirven desde disco — sin red, instantáneo
+- Expiración: 30 días — tras ese plazo se re-descargan automáticamente al visualizarse
+- Sin señal: el mapa muestra todos los tiles previamente cacheados
+- El caché persiste entre reinicios y actualizaciones de la app
+
+**Archivos con `TileLayer` actualizados** (los 5 idénticos):
+- `lib/features/map/screens/map_screen.dart`
+- `lib/features/trip/screens/active_trip_screen.dart`
+- `lib/features/trip/screens/boarding_confirm_screen.dart`
+- `lib/features/map/screens/map_pick_screen.dart`
+- `lib/features/trip/widgets/route_preview_sheet.dart`
+
+*Última actualización: 2026-03-18 (v38)*

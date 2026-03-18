@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
@@ -446,6 +447,11 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
                 userAgentPackageName: AppStrings.osmUserAgent,
                 keepBuffer: 3,
                 panBuffer: 1,
+                tileProvider: const FMTCStore('mapTiles').getTileProvider(
+                  settings: FMTCTileProviderSettings(
+                    cachedValidDuration: const Duration(days: 30),
+                  ),
+                ),
               ),
               if (route.geometry.isNotEmpty)
                 RoutePolylineLayer(
