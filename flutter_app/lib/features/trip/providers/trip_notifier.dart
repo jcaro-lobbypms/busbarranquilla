@@ -8,6 +8,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/api/api_client.dart';
+import '../../../core/data/repositories/auth_repository.dart';
 import '../../../core/data/repositories/credits_repository.dart';
 import '../../../core/data/repositories/reports_repository.dart';
 import '../../../core/data/repositories/routes_repository.dart';
@@ -113,6 +114,7 @@ class TripNotifier extends Notifier<TripState> {
   Timer? _deviationReEntryTimer;
   Timer? _desvioEscalateTimer;
   Timer? _desvioConfirmTimer;
+  Timer? _noDestTimer;
   int? _deviationRouteId;
   int? _desvioReportId; // ID of the active desvio report; resolved on return to route or trip end
 
@@ -319,6 +321,42 @@ class TripNotifier extends Notifier<TripState> {
     _bindSocketRouteListeners(routeId);
     _startLocationBroadcast();
     _startMonitors(activeState, destinationStopId);
+    if (destinationStopId == null) {
+      _noDestTimer = Timer(const Duration(minutes: 4), () {
+        unawaited(() async {
+          if (state is! TripActive) return;
+          final active = state as TripActive;
+          if (active.trip.destinationStopId != null || hasDropoffMonitor) return;
+
+          // Fetch fresh profile so credits reflect any spending/earning during
+          // the 4-minute window (avoids stale cached value).
+          final profileResult =
+              await ref.read(authRepositoryProvider).getProfile();
+          if (profileResult is! Success) return;
+          final user = profileResult.data;
+
+          final prefs = user.notificationPrefs;
+          if (prefs?.boardingAlerts == false) return;
+
+          final isPremium = user.isPremium || user.role == 'admin';
+          final hasCredits = user.credits >= 5;
+
+          if (!isPremium && !hasCredits) {
+            unawaited(NotificationService.showAlert(
+              title: AppStrings.noDestinationPremiumNudgeTitle,
+              body: AppStrings.noDestinationPremiumNudgeBody,
+              payload: 'no_destination',
+            ));
+          } else {
+            unawaited(NotificationService.showAlert(
+              title: AppStrings.noDestinationNudgeTitle,
+              body: AppStrings.noDestinationNudgeBody,
+              payload: 'no_destination',
+            ));
+          }
+        }());
+      });
+    }
     _startOccupancyPolling(routeId);
   }
 
@@ -424,6 +462,18 @@ class TripNotifier extends Notifier<TripState> {
     if (state is TripActive) {
       state = (state as TripActive).copyWith(desvioDetected: false);
     }
+  }
+
+  void requestMapPick() {
+    if (state is! TripActive) return;
+    final active = state as TripActive;
+    if (active.trip.destinationStopId != null || hasDropoffMonitor) return;
+    state = active.copyWith(noMapPickRequested: true);
+  }
+
+  void clearMapPickRequest() {
+    if (state is! TripActive) return;
+    state = (state as TripActive).copyWith(noMapPickRequested: false);
   }
 
   /// User tapped "Sí, sigo en ruta diferente" in the confirmation sheet.
@@ -583,6 +633,8 @@ class TripNotifier extends Notifier<TripState> {
   /// Charges 5 credits for free users (premium/admin free).
   Future<void> setDestinationByLatLng(double lat, double lng, String label) async {
     if (state is! TripActive) return;
+    _noDestTimer?.cancel();
+    _noDestTimer = null;
 
     final authState = ref.read(authNotifierProvider);
     final isPremium = authState is Authenticated &&
@@ -622,6 +674,8 @@ class TripNotifier extends Notifier<TripState> {
   /// Updates destination during an active trip without charging credits again.
   void updateDestinationByLatLng(double lat, double lng, String label) {
     if (state is! TripActive) return;
+    _noDestTimer?.cancel();
+    _noDestTimer = null;
     final active = state as TripActive;
     final syntheticStop = Stop(
       id: -1,
@@ -639,6 +693,8 @@ class TripNotifier extends Notifier<TripState> {
   /// Charges 5 credits (same cost as activateDropoffAlerts).
   Future<void> setDestinationStop(Stop stop) async {
     if (state is! TripActive) return;
+    _noDestTimer?.cancel();
+    _noDestTimer = null;
 
     final creditResult = await ref.read(creditsRepositoryProvider).spend(<String, dynamic>{
       'amount': 5,
@@ -675,7 +731,7 @@ class TripNotifier extends Notifier<TripState> {
         unawaited(NotificationService.showAlert(
           title: AppStrings.prepareToAlight,
           body: AppStrings.prepareToAlightBody,
-          payload: 'dropoff_prepare',
+          payload: 'boarding_alert_prepare',
         ));
       },
       onAlight: () {
@@ -689,7 +745,7 @@ class TripNotifier extends Notifier<TripState> {
         unawaited(NotificationService.showAlert(
           title: AppStrings.alightNow,
           body: AppStrings.alightNowBody,
-          payload: 'dropoff_alight',
+          payload: 'boarding_alert_now',
         ));
       },
       onMissed: () {
@@ -915,14 +971,7 @@ class TripNotifier extends Notifier<TripState> {
         }
       }
     } else if (!isPremium) {
-      if (boardingAlertsEnabled) {
-        // Preference is on but no destination selected yet — skip the payment
-        // confirmation dialog and go straight to destination picker.
-        state = (state as TripActive).copyWith(dropoffAutoPickDestination: true);
-      } else {
-        // Free users without preference: show full prompt (pay + pick destination).
-        state = (state as TripActive).copyWith(dropoffPrompt: true);
-      }
+      // No destination selected — the animated FAB guides the user.
     }
 
     _inactivityMonitor = InactivityMonitor(
@@ -1143,6 +1192,8 @@ class TripNotifier extends Notifier<TripState> {
     _desvioEscalateTimer = null;
     _desvioConfirmTimer?.cancel();
     _desvioConfirmTimer = null;
+    _noDestTimer?.cancel();
+    _noDestTimer = null;
     _disposeMonitorsOnly();
   }
 }

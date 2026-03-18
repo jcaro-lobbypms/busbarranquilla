@@ -20,6 +20,8 @@ import 'features/profile/screens/help_screen.dart';
 import 'features/profile/screens/profile_screen.dart';
 import 'features/profile/screens/trip_history_screen.dart';
 import 'features/shell/main_shell.dart';
+import 'features/trip/providers/trip_notifier.dart';
+import 'features/trip/providers/trip_state.dart';
 import 'features/trip/screens/active_trip_screen.dart';
 import 'features/trip/screens/boarding_confirm_screen.dart';
 import 'features/trip/screens/boarding_screen.dart';
@@ -184,6 +186,11 @@ class _MiBusAppState extends ConsumerState<MiBusApp> {
     NotificationService.getInitialMessage().then((message) {
       if (message != null) _handleNotificationTap(message.data);
     });
+
+    NotificationService.onNotificationTap = _handleLocalNotificationTap;
+    NotificationService.getLaunchPayload().then((payload) {
+      if (payload != null) _handleLocalNotificationTap(payload);
+    });
   }
 
   void _handleNotificationTap(Map<String, dynamic> data) {
@@ -203,6 +210,31 @@ class _MiBusAppState extends ConsumerState<MiBusApp> {
         if (routeId != null) {
           router.go('/trip');
         }
+    }
+  }
+
+  void _handleLocalNotificationTap(String? payload) {
+    if (payload == null) return;
+    final router = ref.read(appRouterProvider);
+    switch (payload) {
+      case 'inactivity_check':
+        router.go('/trip');
+        break;
+      case 'no_destination':
+        router.go('/trip');
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final s = ref.read(tripNotifierProvider);
+          if (s is TripActive) {
+            ref.read(tripNotifierProvider.notifier).requestMapPick();
+          }
+        });
+        break;
+      case 'boarding_alert_prepare':
+      case 'boarding_alert_now':
+        router.go('/trip');
+        break;
+      default:
+        break;
     }
   }
 

@@ -30,6 +30,7 @@ final class TripActive extends TripState {
   final bool desvioConfirmPending;
   final bool desvioEscalateIsTranscon;
   final bool dropoffPrompt;
+  final bool noMapPickRequested;
   /// When true the screen skips the payment-confirmation dialog and goes
   /// straight to the destination picker (used when boardingAlerts pref is
   /// already enabled and no destination was pre-selected).
@@ -54,6 +55,7 @@ final class TripActive extends TripState {
     this.desvioConfirmPending = false,
     this.desvioEscalateIsTranscon = false,
     this.dropoffPrompt = false,
+    this.noMapPickRequested = false,
     this.dropoffAutoPickDestination = false,
     this.showSuspiciousModal = false,
     this.reportError,
@@ -76,6 +78,7 @@ final class TripActive extends TripState {
     bool? desvioConfirmPending,
     bool? desvioEscalateIsTranscon,
     bool? dropoffPrompt,
+    bool? noMapPickRequested,
     bool? dropoffAutoPickDestination,
     bool? showSuspiciousModal,
     String? reportError,
@@ -99,6 +102,7 @@ final class TripActive extends TripState {
       desvioConfirmPending: desvioConfirmPending ?? this.desvioConfirmPending,
       desvioEscalateIsTranscon: desvioEscalateIsTranscon ?? this.desvioEscalateIsTranscon,
       dropoffPrompt: dropoffPrompt ?? this.dropoffPrompt,
+      noMapPickRequested: noMapPickRequested ?? this.noMapPickRequested,
       dropoffAutoPickDestination: dropoffAutoPickDestination ?? this.dropoffAutoPickDestination,
       showSuspiciousModal: showSuspiciousModal ?? this.showSuspiciousModal,
       reportError: clearReportError ? null : (reportError ?? this.reportError),

@@ -49,7 +49,14 @@ abstract final class AppStrings {
   static const tripNoReports = 'No hay reportes activos';
   static const tripDropoffStop = 'Parada de bajada';
   static const tripChangeStop = 'Cambiar';
+  static const tripAddDestination = 'Añadir destino';
   static const tripNoDropoff = 'Sin parada de destino';
+  static const noDestinationNudgeTitle = '🗺️  ¿A dónde vas?';
+  static const noDestinationNudgeBody =
+      'Selecciona tu parada para recibir alertas cuando estés llegando.';
+  static const noDestinationPremiumNudgeTitle = '🔔 Activa alertas de bajada';
+  static const noDestinationPremiumNudgeBody =
+      'Con Premium nunca te pasas de tu parada. ¡El primer mes es gratis!';
   static const tripConfirm = 'Confirmar';
   static const tripStartFirst = 'Primero inicia un viaje';
 

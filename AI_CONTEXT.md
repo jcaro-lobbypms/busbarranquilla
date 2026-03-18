@@ -148,11 +148,11 @@ ShellRoute (BottomNavigationBar 4 tabs):
 - Las llamadas al backend y socket se siguen throttleando a ~30s para no sobrecargar el servidor.
 - `MapScreen` y `ActiveTripScreen` usan `tripState.trip.currentLatitude/currentLongitude` como fuente de posición (no el socket).
 
-**Prompt de alertas de bajada para usuarios free:**
-- Al iniciar el viaje, si el usuario es free (no premium/admin), `_startMonitors()` muestra `dropoffPrompt: true` **siempre**, haya o no parada de destino pre-seleccionada.
-- Si hay destino pre-seleccionado: al aceptar → `activateDropoffAlerts()` cobra 5 créditos y arranca el monitor.
-- Si NO hay destino: al aceptar → navega a `/trip/stop-select?routeId=X&setDestination=true` → usuario elige parada → `setDestinationStop(stop)` cobra 5 créditos y arranca el monitor.
-- `StopSelectScreen` tiene parámetro `setDestination: bool` — cuando es `true`, llama `setDestinationStop()` y hace pop, en vez de iniciar un viaje nuevo.
+**Prompt de alertas de bajada para usuarios free (Spec 43):**
+- `_startMonitors()` ya **NO** dispara `dropoffPrompt` ni `dropoffAutoPickDestination` automáticamente cuando `destinationStopId == null`. El bloque `else if (!isPremium)` fue eliminado.
+- El FAB `where_to_vote` en `ActiveTripScreen` pulsa con `ScaleTransition` (1.0→1.22, 900ms) y muestra una etiqueta "Añadir destino" mientras no haya destino seleccionado. Guía al usuario visualmente sin interrupciones.
+- Si hay destino pre-seleccionado al montar: al aceptar → `activateDropoffAlerts()` cobra 5 créditos y arranca el monitor.
+- Si NO hay destino: el usuario toca el FAB → `_changeDestination()` → `MapPickScreen` para elegir punto en mapa.
 
 ### 3. Planificador de viaje
 1. `PlannerScreen` — auto-setea origen a GPS al cargar
@@ -439,16 +439,21 @@ solo si el cache es null.
 `HapticFeedback.vibrate()` daba un toque suave imperceptible.
 **Fix:** Al disparar `onAlight`, se ejecutan 3 `HapticFeedback.heavyImpact()` separados por 350ms.
 
-**Flujo completo de alertas de bajada (usuarios free):**
-1. `startTrip()` finaliza → `_startMonitors()` fija `dropoffPrompt: true` (con o sin destino)
-2. `ActiveTripScreen.initState` detecta el prompt → muestra `AlertDialog`
-3. Usuario acepta:
-   - Con destino pre-seleccionado (`destinationStopId != null`) → `activateDropoffAlerts()` cobra 5 cr, arranca `DropoffMonitor`
-   - Sin destino → `_pickDestinationOnMap()` → abre `MapPickScreen` centrado en GPS actual → usuario elige punto en mapa → bottom sheet de confirmación → `setDestinationByLatLng()` cobra 5 cr, crea `Stop` sintético (`id: -1`), arranca `DropoffMonitor`
+**Flujo completo de alertas de bajada (usuarios free — post Spec 43):**
+1. `startTrip()` finaliza → sin prompt automático. FAB animado en `ActiveTripScreen` guía al usuario.
+2. Si usuario toca el FAB → `_changeDestination()` → `MapPickScreen` → elige punto → `setDestinationByLatLng()` cobra 5 cr, crea `Stop` sintético (`id: -1`), arranca `DropoffMonitor`.
+3. Si tiene destino pre-seleccionado y acepta el `dropoffPrompt` → `activateDropoffAlerts()` cobra 5 cr, arranca `DropoffMonitor`.
 4. `DropoffMonitor` verifica posición cada 15s:
    - ≤400 m → banner amarillo "Prepárate para bajar"
    - ≤200 m → banner rojo "¡Bájate ya!" + 3 vibraciones fuertes
    - Pasó la parada → banner "Perdiste la parada"
+
+**Timer de nudge sin destino (Spec 44 — `_noDestTimer`):**
+- Arranca en `startTrip()` si `destinationStopId == null`. Dispara una sola vez a los 4 minutos.
+- Antes de disparar verifica: destino ya elegido → cancela. `boardingAlerts == false` → cancela.
+- Si `user.isPremium || role=='admin' || credits >= 5` → push "¿A dónde vas? Selecciona tu parada" (`payload: 'no_destination'`)
+- Si `free && credits < 5` → push "Activa alertas de bajada → hazte premium" (mismo payload)
+- Se cancela también en `setDestinationStop()`, `setDestinationByLatLng()`, `updateDestinationByLatLng()`, y `_disposeMonitorsAndTimers()`.
 
 **Cambiar destino durante viaje activo (botón 🚩 en `ActiveTripScreen`):**
 `_changeDestination()` abre `MapPickScreen` centrado en el destino EXISTENTE, no en el GPS:
@@ -989,4 +994,28 @@ _autoboardPending, _autoboardUndoTimer
 
 **Nota para futuros cambios:** NO volver a `flutter_secure_storage` sin resolver el Keystore deadlock. Si se necesita cifrado real en el futuro, usar `encryptedSharedPreferences: true` con manejo de errores robusto.
 
-*Última actualización: 2026-03-17 (v35)*
+---
+
+## Deep-link de notificaciones locales (Spec 44)
+
+**`NotificationService`** (`lib/core/notifications/notification_service.dart`):
+- `static void Function(String? payload)? onNotificationTap` — callback registrado en `app.dart`
+- `onDidReceiveNotificationResponse` wired en `initialize()` → llama `onNotificationTap`
+- `_onBackgroundNotificationResponse` — función top-level `@pragma('vm:entry-point')` para taps en background
+- `getLaunchPayload()` — recupera el payload de la notificación que lanzó el app desde estado terminado
+
+**`app.dart` — `_handleLocalNotificationTap(String? payload)`:**
+| Payload | Acción |
+|---|---|
+| `inactivity_check` | `router.go('/trip')` — `ActiveTripScreen.initState` muestra el modal si `showInactivityModal == true` |
+| `no_destination` | `router.go('/trip')` + `requestMapPick()` → `ActiveTripScreen` abre `_pickDestinationOnMap()` (crosshair, NO lista de paradas) |
+| `boarding_alert_prepare` / `boarding_alert_now` | `router.go('/trip')`, sin modal |
+
+**`TripActive.noMapPickRequested`** (`trip_state.dart`): flag que señala a `ActiveTripScreen` que debe abrir el map picker. Seteado por `requestMapPick()`, limpiado por `clearMapPickRequest()`.
+
+**Payloads de alertas existentes** (agregados en Spec 44):
+- Inactividad → `payload: 'inactivity_check'`
+- Alerta prepararse → `payload: 'boarding_alert_prepare'`
+- Alerta bajarse → `payload: 'boarding_alert_now'`
+
+*Última actualización: 2026-03-18 (v36)*

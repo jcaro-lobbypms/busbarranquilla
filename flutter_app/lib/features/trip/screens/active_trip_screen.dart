@@ -29,7 +29,7 @@ class ActiveTripScreen extends ConsumerStatefulWidget {
 }
 
 class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final MapController _mapController = MapController();
   bool _suspiciousDialogShown = false;
   bool _desvioEscalateDialogShown = false;
@@ -44,6 +44,8 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen>
   late final Animation<Offset> _creditSlide;
   late final Animation<double> _creditFade;
   int _creditGain = 0;
+  late final AnimationController _destAnimController;
+  late final Animation<double> _destPulse;
 
   @override
   void initState() {
@@ -64,6 +66,13 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen>
         parent: _creditAnimController,
         curve: const Interval(0.45, 1.0, curve: Curves.easeIn),
       ),
+    );
+    _destAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+    _destPulse = Tween<double>(begin: 1.0, end: 1.22).animate(
+      CurvedAnimation(parent: _destAnimController, curve: Curves.easeInOut),
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -100,6 +109,13 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen>
         ref.read(tripNotifierProvider.notifier).clearDropoffAutoPickDestination();
         _pickDestinationOnMap(ref.read(tripNotifierProvider.notifier));
       }
+      if (s is TripActive && s.showInactivityModal) {
+        _showInactivityDialog();
+      }
+      if (s is TripActive && s.noMapPickRequested) {
+        ref.read(tripNotifierProvider.notifier).clearMapPickRequest();
+        _pickDestinationOnMap(ref.read(tripNotifierProvider.notifier));
+      }
     });
   }
 
@@ -107,6 +123,7 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen>
   void dispose() {
     _mapController.dispose();
     _creditAnimController.dispose();
+    _destAnimController.dispose();
     super.dispose();
   }
 
@@ -594,6 +611,10 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen>
           }
         });
       }
+      if (next.noMapPickRequested && prev?.noMapPickRequested != true) {
+        ref.read(tripNotifierProvider.notifier).clearMapPickRequest();
+        _pickDestinationOnMap(ref.read(tripNotifierProvider.notifier));
+      }
     });
 
     ref.listen<TripState>(tripNotifierProvider, (prev, next) {
@@ -894,12 +915,46 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                FloatingActionButton.small(
-                  heroTag: 'change_dest',
-                  backgroundColor: Colors.white,
-                  tooltip: AppStrings.tripChangeDestination,
-                  onPressed: () => _changeDestination(),
-                  child: const Icon(Icons.where_to_vote, color: AppColors.accent),
+                Builder(
+                  builder: (context) {
+                    final hasDestination = active.trip.destinationStopId != null ||
+                        ref.read(tripNotifierProvider.notifier).hasDropoffMonitor;
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        ScaleTransition(
+                          scale: hasDestination
+                              ? const AlwaysStoppedAnimation(1.0)
+                              : _destPulse,
+                          child: FloatingActionButton.small(
+                            heroTag: 'change_dest',
+                            backgroundColor: Colors.white,
+                            tooltip: AppStrings.tripChangeDestination,
+                            onPressed: () => _changeDestination(),
+                            child: const Icon(Icons.where_to_vote, color: AppColors.accent),
+                          ),
+                        ),
+                        if (!hasDestination) ...<Widget>[
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryDark.withValues(alpha: 0.85),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text(
+                              AppStrings.tripAddDestination,
+                              style: TextStyle(
+                                fontSize: 9,
+                                color: AppColors.accent,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    );
+                  },
                 ),
                 const SizedBox(height: 8),
                 FloatingActionButton.small(
