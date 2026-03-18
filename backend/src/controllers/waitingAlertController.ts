@@ -7,7 +7,7 @@ import { haversineKm } from './routeController';
 // Charges 3 credits to free users; free for premium/admin.
 export const subscribeWaitingAlert = async (req: Request, res: Response): Promise<void> => {
   const userId = (req as any).userId as number;
-  const routeId = parseInt(req.params.id, 10);
+  const routeId = parseInt(String(req.params.id), 10);
   const { userLat, userLng } = req.body;
 
   if (!userLat || !userLng) {
@@ -57,7 +57,7 @@ export const subscribeWaitingAlert = async (req: Request, res: Response): Promis
 // DELETE /api/routes/:id/waiting-alert
 export const unsubscribeWaitingAlert = async (req: Request, res: Response): Promise<void> => {
   const userId = (req as any).userId as number;
-  const routeId = parseInt(req.params.id, 10);
+  const routeId = parseInt(String(req.params.id), 10);
 
   await pool.query(
     `UPDATE waiting_alerts SET is_active = false

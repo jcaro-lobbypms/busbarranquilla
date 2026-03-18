@@ -792,10 +792,10 @@ export const searchRoute = async (req: Request, res: Response): Promise<void> =>
 
 // GET /api/routes/:id/nearby-buses?userLat=X&userLng=Y&radiusKm=2
 export const getNearbyBuses = async (req: Request, res: Response): Promise<void> => {
-  const routeId = parseInt(req.params.id, 10);
-  const userLat = parseFloat(req.query.userLat as string);
-  const userLng = parseFloat(req.query.userLng as string);
-  const radiusKm = parseFloat((req.query.radiusKm as string) ?? '2');
+  const routeId = parseInt(String(req.params.id), 10);
+  const userLat = parseFloat(String(req.query.userLat ?? ''));
+  const userLng = parseFloat(String(req.query.userLng ?? ''));
+  const radiusKm = parseFloat(String(req.query.radiusKm ?? '2'));
 
   if (isNaN(userLat) || isNaN(userLng)) {
     res.status(400).json({ error: 'userLat and userLng required' });
