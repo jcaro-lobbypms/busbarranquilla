@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -766,9 +767,14 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
   Future<void> _vibrateWaitingAlert() async {
     final hasVibrator = (await Vibration.hasVibrator()) != false;
-    if (!hasVibrator) return;
-    // Two short pulses: bzzz-pause-bzzz
-    await Vibration.vibrate(pattern: <int>[0, 400, 200, 400]);
+    if (hasVibrator) {
+      unawaited(Vibration.vibrate(pattern: <int>[0, 400, 200, 400]));
+    } else {
+      // Emulator fallback.
+      await HapticFeedback.heavyImpact();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await HapticFeedback.heavyImpact();
+    }
   }
 
   static double _distToRouteGeometry(LatLng point, List<LatLng> geometry) {

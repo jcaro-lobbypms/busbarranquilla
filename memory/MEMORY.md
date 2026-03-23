@@ -97,6 +97,25 @@ Cada reporte incluye `reported_geometry` (traza GPS del usuario) y `route_geomet
 - `web/src/App.tsx` — nueva ruta `/admin/gps-reports`
 - `web/src/pages/admin/AdminLayout.tsx` — nueva entrada en `navItems`
 
+## Flutter UI — espaciado confirmaciones (2026-03-23)
+
+- `boarding_confirm_screen.dart`: padding inferior extra para alejar el panel de confirmación del borde inferior.
+- `stop_select_screen.dart`: padding inferior aumentado para el botón de confirmar parada.
+- `active_trip_screen.dart` (`_TripSummaryScreen`): `SafeArea(bottom: false)` y header más compacto para evitar overflow en pantallas pequeñas.
+
+## Flutter UI — MapPick button spacing (2026-03-23)
+
+- `map_pick_screen.dart`: el botón "Confirmar punto" ahora se posiciona con `bottomPad + 24` para evitar quedar oculto por la barra inferior.
+
+## Flutter UI — Selección de parada solo por mapa (2026-03-23)
+
+- `boarding_confirm_screen.dart`: se eliminó la lista modal; la parada se selecciona desde el mapa y el texto "Cambiar" ahora abre el mapa.
+
 ## Archivos clave modificados (esta sesión)
 - `backend/src/controllers/routeDescriptionController.ts` — geocodificación multimunicipio + Google Maps
 - `web/src/pages/admin/AdminRoutes.tsx` — borrado por segmento (reemplaza borrador freehand)
+- `flutter_app/lib/features/trip/screens/boarding_confirm_screen.dart` — panel inferior más alto
+- `flutter_app/lib/features/trip/screens/stop_select_screen.dart` — padding inferior extra
+- `flutter_app/lib/features/trip/screens/active_trip_screen.dart` — header de resumen con SafeArea
+- `flutter_app/lib/features/map/screens/map_pick_screen.dart` — botón de confirmar punto más arriba
+- `flutter_app/lib/features/trip/screens/boarding_confirm_screen.dart` — selección de parada solo por mapa

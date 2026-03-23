@@ -1183,4 +1183,63 @@ Todos los calls usan `unawaited(AnalyticsService.method())` — nunca bloquean e
 - `getInitialMessage()` + `onMessageOpenedApp` en `app.dart` routean al destino correcto ✅
 - **Prerequisito producción:** variable `FIREBASE_SERVICE_ACCOUNT` debe estar configurada en Railway con el JSON de la service account de Firebase Admin SDK
 
-*Última actualización: 2026-03-18 (v43)*
+## Performance fixes (Specs 52 + 53) ✅ Implementado
+
+**Problema:** App lenta en login→mapa, apertura del planificador, creación de reportes. Causa raíz: `getCurrentPosition()` bloqueaba UI hasta 15s; listeners re-registrados en cada rebuild.
+
+**`getBestEffortPosition()` — `lib/core/location/location_service.dart`:**
+- Primero intenta `Geolocator.getLastKnownPosition()` (caché del OS, retorna en ms)
+- Solo si no hay caché hace `getCurrentPosition()` con timeout de 5s
+- Reemplaza a `getCurrentPosition()` en: `map_provider.dart`, `planner_screen.dart`, `planner_notifier.dart`, `trip_notifier.dart`
+
+**Rebuilds — listeners movidos de `build()` a `initState()`:**
+- `map_screen.dart`: `_waitingRouteSub = ref.listenManual(selectedWaitingRouteProvider, ...)` — evita re-registrar en cada rebuild del mapa
+- `active_trip_screen.dart`: `_tripStateSub` + `_desvioConfirmSub` = dos `ref.listenManual(tripNotifierProvider, ...)` — evita re-registrar los listeners más pesados (GPS follow, animaciones, diálogos) en cada actualización GPS (~30s durante viaje)
+- Ambas subscripciones se cierran en `dispose()`
+
+**`select` para rebuilds parciales** — en lugar de `ref.watch(tripNotifierProvider)` completo:
+- `map_screen.dart`, `boarding_confirm_screen.dart`, `stop_select_screen.dart`, `map_pick_screen.dart`, `main_shell.dart`
+
+**Cache Nominatim — `planner_notifier.dart`:**
+- `_searchCache: Map<String, List<NominatimResult>>` en memoria
+- `searchAddress()` consulta caché antes de hacer request; guarda resultado tras recibirlo
+- Evita peticiones duplicadas cuando el usuario tipea la misma dirección dos veces
+
+**Timeout Nominatim:** `connectTimeout` + `receiveTimeout` reducidos de 10s → **5s**
+
+## Vibración — fix HapticFeedback (2026-03-23) ✅
+
+**Problema:** `vibration` package llama directamente al motor vibratorio del hardware — emuladores no tienen motor físico, la llamada se ignora silenciosamente.
+
+**Fix:** `_vibrate()` en `trip_notifier.dart` ahora usa **dos capas**:
+1. `HapticFeedback.heavyImpact()` (primaria) — funciona en emuladores Android API 26+ y todos los dispositivos reales
+2. `Vibration.vibrate(pattern: [...])` (secundaria) — solo si `_canVibrate`, añade vibración con duración real en dispositivos físicos
+
+**`_hapticPulses(int count)`** — nuevo método en `TripNotifier`: dispara `count` impulsos `heavyImpact` con 200ms de pausa entre ellos. Usado por `_vibrate()` para replicar el patrón de pulsos.
+
+**`_vibrateWaitingAlert()`** en `map_screen.dart` — mismo patrón: 2x `HapticFeedback.heavyImpact()` + `Vibration.vibrate()` condicional.
+
+**Import añadido:** `package:flutter/services.dart` en `trip_notifier.dart` y `map_screen.dart`.
+
+## UI — espaciado en confirmaciones de viaje (2026-03-23) ✅
+
+**Problema:** Botones de confirmar ruta/parada quedaban muy pegados al borde inferior en pantallas con barra de navegación.
+
+**Fix:**
+- `boarding_confirm_screen.dart`: se añade un **extra de 16 px** al cálculo de `bottomPadding` para levantar el panel inferior y elementos flotantes.
+- `stop_select_screen.dart`: padding inferior aumentado (`EdgeInsets.fromLTRB(12, 12, 12, 24)`).
+- `active_trip_screen.dart` (`_TripSummaryScreen`): `SafeArea(bottom: false)` + header con padding superior fijo para reducir riesgo de overflow en pantallas pequeñas.
+
+## UI — MapPick button spacing (2026-03-23) ✅
+
+**Problema:** el botón "Confirmar punto" quedaba oculto por la barra inferior (gestos/nav).
+
+**Fix:** `map_pick_screen.dart` calcula `bottomPad = MediaQuery.of(context).padding.bottom` y posiciona el botón en `bottomPad + 24` para respetar el área segura.
+
+## UI — Selección de parada solo por mapa (2026-03-23) ✅
+
+**Problema:** la lista de paradas no aportaba dirección/nombre útil y el botón "Cambiar" resultaba confuso.
+
+**Fix:** en `boarding_confirm_screen.dart` se eliminó la lista modal; la selección de parada se hace **solo** desde el mapa. El texto **"Cambiar"** permanece y abre el mapa (igual que el ícono).
+
+*Última actualización: 2026-03-23 (v49)*

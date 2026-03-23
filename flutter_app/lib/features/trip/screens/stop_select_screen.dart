@@ -99,7 +99,7 @@ class _StopSelectScreenState extends ConsumerState<StopSelectScreen> {
       appBar: AppBar(title: const Text(AppStrings.stopSelectTitle)),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[

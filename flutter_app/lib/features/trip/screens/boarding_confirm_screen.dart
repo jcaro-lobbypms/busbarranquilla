@@ -259,71 +259,6 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
     );
   }
 
-  void _showStopListModal() {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.5,
-        minChildSize: 0.3,
-        maxChildSize: 0.85,
-        expand: false,
-        builder: (ctx, scroll) => Column(
-          children: <Widget>[
-            const SizedBox(height: 12),
-            Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                AppStrings.tripSelectStopOptional,
-                style: Theme.of(ctx).textTheme.titleSmall,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: _stops.isEmpty
-                  ? const Center(child: Text(AppStrings.tripNoStops))
-                  : ListView.builder(
-                      controller: scroll,
-                      itemCount: _stops.length,
-                      itemBuilder: (_, index) {
-                        final stop = _stops[index];
-                        final selected = stop.id == _selectedStopId;
-                        return ListTile(
-                          onTap: () {
-                            setState(() => _selectedStopId = selected ? null : stop.id);
-                            Navigator.of(ctx).pop();
-                            if (!selected) {
-                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                if (mounted) _fitCameraToStop(stop);
-                              });
-                            }
-                          },
-                          leading: Icon(
-                            selected ? Icons.check_circle : Icons.radio_button_unchecked,
-                            color: selected ? AppColors.primary : null,
-                          ),
-                          title: Text(stop.name),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   // ── Map helpers ──────────────────────────────────────────────────────────────
 
   /// Moves the camera to show the selected stop + user position after
@@ -435,7 +370,8 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
     final selectedStop = _selectedStop;
     final finalDest = _finalDest;
     final topPadding = MediaQuery.of(context).padding.top;
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    const extraBottomSpacing = 16.0;
+    final bottomPadding = MediaQuery.of(context).padding.bottom + extraBottomSpacing;
 
     return Scaffold(
       body: Stack(
@@ -681,7 +617,6 @@ class _BoardingConfirmScreenState extends ConsumerState<BoardingConfirmScreen> {
                   // Dropoff row
                   _DropoffRow(
                     selectedStop: selectedStop,
-                    onChangeTap: _showStopListModal,
                     onPickFromMap: () async {
                       final stop = selectedStop;
                       final String query;
@@ -757,12 +692,10 @@ class _LegendItem extends StatelessWidget {
 
 class _DropoffRow extends StatelessWidget {
   final Stop? selectedStop;
-  final VoidCallback onChangeTap;
   final VoidCallback? onPickFromMap;
 
   const _DropoffRow({
     required this.selectedStop,
-    required this.onChangeTap,
     this.onPickFromMap,
   });
 
@@ -820,15 +753,16 @@ class _DropoffRow extends StatelessWidget {
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
             ),
-          TextButton(
-            onPressed: onChangeTap,
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          if (onPickFromMap != null)
+            TextButton(
+              onPressed: onPickFromMap,
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text(AppStrings.tripChangeStop),
             ),
-            child: const Text(AppStrings.tripChangeStop),
-          ),
         ],
       ),
     );

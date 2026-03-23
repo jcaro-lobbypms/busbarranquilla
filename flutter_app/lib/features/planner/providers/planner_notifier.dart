@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 
@@ -38,6 +39,7 @@ class PlannerNotifier extends Notifier<PlannerState> {
   NominatimResult? _selectedDest;
   bool _originIsGps = false;
   Timer? _nearbyRefreshTimer;
+  final Map<String, List<NominatimResult>> _searchCache = <String, List<NominatimResult>>{};
 
   @override
   PlannerState build() {
@@ -144,6 +146,15 @@ class PlannerNotifier extends Notifier<PlannerState> {
       return const <NominatimResult>[];
     }
 
+    final cacheKey = cleanQuery.toLowerCase();
+    final cached = _searchCache[cacheKey];
+    if (cached != null) {
+      debugPrint('[PERF][NOMINATIM] caché hit para "$cleanQuery" → ${cached.length} resultados');
+      return cached;
+    }
+
+    final sw = Stopwatch()..start();
+    debugPrint('[PERF][NOMINATIM] buscando "$cleanQuery"...');
     try {
       final response = await ref.read(nominatimDioProvider).get<List<dynamic>>(
         '/search',
@@ -173,8 +184,11 @@ class PlannerNotifier extends Notifier<PlannerState> {
         }
       }
 
+      _searchCache[cacheKey] = results;
+      debugPrint('[PERF][NOMINATIM] respuesta en ${sw.elapsedMilliseconds}ms → ${results.length} resultados');
       return results;
     } catch (_) {
+      debugPrint('[PERF][NOMINATIM] error/timeout tras ${sw.elapsedMilliseconds}ms');
       return const <NominatimResult>[];
     }
   }
@@ -195,6 +209,8 @@ class PlannerNotifier extends Notifier<PlannerState> {
   }) async {
     state = const PlannerLoading();
 
+    final sw = Stopwatch()..start();
+    debugPrint('[PERF][PLAN] planificando ruta...');
     final result = await ref.read(routesRepositoryProvider).plan(
       originLat: originLat,
       originLng: originLng,
@@ -204,6 +220,7 @@ class PlannerNotifier extends Notifier<PlannerState> {
 
     switch (result) {
       case Success<List<PlanResult>>(data: final routes):
+        debugPrint('[PERF][PLAN] respuesta en ${sw.elapsedMilliseconds}ms → ${routes.length} rutas');
         state = PlannerResults(
           originLabel: _selectedOrigin?.displayName ?? AppStrings.originLabel,
           destLabel: _selectedDest?.displayName ?? AppStrings.destLabel,
@@ -212,6 +229,7 @@ class PlannerNotifier extends Notifier<PlannerState> {
           selectedDest: _selectedDest,
         );
       case Failure<List<PlanResult>>(error: final error):
+        debugPrint('[PERF][PLAN] error tras ${sw.elapsedMilliseconds}ms: ${error.message}');
         state = PlannerError(error.message);
     }
   }
