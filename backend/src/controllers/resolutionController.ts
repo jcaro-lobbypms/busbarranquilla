@@ -122,43 +122,73 @@ Nota sobre es_nueva: siempre ponlo en false — el sistema backend lo verificar�
   return JSON.parse(raw) as ResolutionResult;
 }
 
+// ── Job store (in-memory — admin tool, no persistence needed) ──────────────
+
+type JobState =
+  | { status: 'processing' }
+  | { status: 'done'; result: ResolutionResult }
+  | { status: 'error'; message: string };
+
+const jobs = new Map<string, JobState>();
+
 // ── Controllers ────────────────────────────────────────────────────────────
 
 /**
  * POST /api/resolutions/parse
- * Multipart form-data, campo "file" con el PDF.
+ * Retorna { jobId } inmediatamente. El procesamiento ocurre en background.
  * Auth: admin
  */
-export const parseResolution = async (req: Request, res: Response): Promise<void> => {
+export const parseResolution = (req: Request, res: Response): void => {
   if (!req.file) {
     res.status(400).json({ message: 'Se requiere un archivo PDF (campo "file")' });
     return;
   }
 
-  try {
-    // Claude lee el PDF directamente (texto o escaneado)
-    const result = await parseResolutionWithClaude(req.file.buffer);
+  const jobId = `res_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  jobs.set(jobId, { status: 'processing' });
 
-    // 3. Verify each route against DB
-    for (const ruta of result.rutas) {
-      const dbResult = await pool.query(
-        'SELECT id, name, geometry FROM routes WHERE code = $1',
-        [ruta.codigo]
-      );
-      ruta.exists = dbResult.rows.length > 0;
-      ruta.es_nueva = !ruta.exists;
-      ruta.dbData = dbResult.rows[0] ?? null;
-    }
+  // Respond immediately — processing happens in background
+  res.json({ jobId });
 
-    res.json(result);
-  } catch (err: any) {
-    console.error('[resolutionController] parseResolution error:', err);
-    if (err instanceof SyntaxError) {
-      res.status(422).json({ message: 'Claude no pudo generar un JSON válido. Intenta de nuevo.' });
-    } else {
-      res.status(500).json({ message: 'Error procesando la resolución' });
-    }
+  const buffer = req.file.buffer;
+
+  parseResolutionWithClaude(buffer)
+    .then(async (result) => {
+      for (const ruta of result.rutas) {
+        const dbResult = await pool.query(
+          'SELECT id, name, geometry FROM routes WHERE code = $1',
+          [ruta.codigo]
+        );
+        ruta.exists = dbResult.rows.length > 0;
+        ruta.es_nueva = !ruta.exists;
+        ruta.dbData = dbResult.rows[0] ?? null;
+      }
+      jobs.set(jobId, { status: 'done', result });
+    })
+    .catch((err: any) => {
+      console.error('[resolutionController] background parse error:', err);
+      const message = err instanceof SyntaxError
+        ? 'Claude no pudo generar un JSON válido. Intenta de nuevo.'
+        : 'Error procesando la resolución';
+      jobs.set(jobId, { status: 'error', message });
+    });
+};
+
+/**
+ * GET /api/resolutions/status/:jobId
+ * Polling endpoint. Retorna { status, result? } o { status, message }.
+ * Auth: admin
+ */
+export const getResolutionJob = (req: Request, res: Response): void => {
+  const jobId = Array.isArray(req.params.jobId) ? req.params.jobId[0] : req.params.jobId;
+  const job = jobs.get(jobId);
+  if (!job) {
+    res.status(404).json({ message: 'Job no encontrado o expirado' });
+    return;
   }
+  res.json(job);
+  // Clean up once delivered
+  if (job.status !== 'processing') jobs.delete(jobId);
 };
 
 /**

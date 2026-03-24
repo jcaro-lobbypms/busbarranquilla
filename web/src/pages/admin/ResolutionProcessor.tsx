@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import api from '../../services/api';
 import RutaCard, { type RutaData, type RutaDecision } from '../../components/admin/RutaCard';
 
@@ -9,6 +9,8 @@ interface ResolutionData {
   rutas: RutaData[];
 }
 
+const POLL_INTERVAL_MS = 4000;
+
 export default function ResolutionProcessor() {
   const [isDragging, setIsDragging] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -17,7 +19,42 @@ export default function ResolutionProcessor() {
   const [result, setResult] = useState<ResolutionData | null>(null);
   const [decisions, setDecisions] = useState<Record<string, RutaDecision>>({});
   const [applyResult, setApplyResult] = useState<{ applied: number; results: { codigo: string; action: string }[] } | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Polling loop
+  useEffect(() => {
+    if (!jobId) return;
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await api.get<{ status: string; result?: ResolutionData; message?: string }>(
+          `/api/resolutions/status/${jobId}`
+        );
+        if (res.data.status === 'done' && res.data.result) {
+          clearInterval(pollRef.current!);
+          setJobId(null);
+          setLoading(false);
+          setResult(res.data.result);
+          const initial: Record<string, RutaDecision> = {};
+          res.data.result.rutas.forEach(r => { initial[r.codigo] = 'pending'; });
+          setDecisions(initial);
+        } else if (res.data.status === 'error') {
+          clearInterval(pollRef.current!);
+          setJobId(null);
+          setLoading(false);
+          setError(res.data.message ?? 'Error procesando la resolución');
+        }
+      } catch {
+        clearInterval(pollRef.current!);
+        setJobId(null);
+        setLoading(false);
+        setError('Error consultando el estado del procesamiento');
+      }
+    }, POLL_INTERVAL_MS);
+
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [jobId]);
 
   const processFile = async (file: File) => {
     if (!file.name.endsWith('.pdf')) {
@@ -34,19 +71,13 @@ export default function ResolutionProcessor() {
     formData.append('file', file);
 
     try {
-      const res = await api.post<ResolutionData>('/api/resolutions/parse', formData, {
+      const res = await api.post<{ jobId: string }>('/api/resolutions/parse', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 120_000, // Claude puede tardar hasta 2 min
       });
-      setResult(res.data);
-      // Init all decisions as pending
-      const initial: Record<string, RutaDecision> = {};
-      res.data.rutas.forEach(r => { initial[r.codigo] = 'pending'; });
-      setDecisions(initial);
+      setJobId(res.data.jobId); // starts polling via useEffect
     } catch (err: any) {
-      setError(err.response?.data?.message ?? 'Error procesando el PDF');
-    } finally {
       setLoading(false);
+      setError(err.response?.data?.message ?? 'Error enviando el PDF');
     }
   };
 
@@ -126,8 +157,10 @@ export default function ResolutionProcessor() {
       {/* Loading */}
       {loading && (
         <div className="border-2 border-dashed border-blue-300 rounded-xl p-12 text-center bg-blue-50">
-          <div className="text-gray-700 font-medium mb-2">Procesando resolución con Claude...</div>
-          <div className="text-gray-500 text-sm">Esto puede tardar hasta 2 minutos dependiendo del PDF</div>
+          <div className="text-gray-700 font-medium mb-2">
+            {jobId ? 'Claude está leyendo la resolución...' : 'Enviando PDF...'}
+          </div>
+          <div className="text-gray-500 text-sm">PDFs escaneados pueden tardar 2–4 minutos. No cierres esta ventana.</div>
           <div className="mt-4 flex justify-center">
             <div className="h-2 w-48 bg-gray-200 rounded-full overflow-hidden">
               <div className="h-full bg-blue-500 rounded-full animate-pulse w-3/4" />

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { parseResolution, applyResolution } from '../controllers/resolutionController';
+import { parseResolution, applyResolution, getResolutionJob } from '../controllers/resolutionController';
 import { authMiddleware } from '../middlewares/authMiddleware';
 import { requireRole } from '../middlewares/roleMiddleware';
 
@@ -20,6 +20,14 @@ router.post(
   requireRole('admin'),
   upload.single('file'),
   parseResolution
+);
+
+// GET /status/:jobId — debe ir ANTES de cualquier ruta con segmento fijo para evitar conflictos
+router.get(
+  '/status/:jobId',
+  authMiddleware,
+  requireRole('admin'),
+  getResolutionJob
 );
 
 router.post(
