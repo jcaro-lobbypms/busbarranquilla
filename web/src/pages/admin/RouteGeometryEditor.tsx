@@ -88,6 +88,7 @@ export default function RouteGeometryEditor() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [undoCount, setUndoCount] = useState(0);
+  const [deleteMode, setDeleteMode] = useState(false);
 
   // Map DOM
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -101,6 +102,9 @@ export default function RouteGeometryEditor() {
   // Geometry lives in a mutable ref — no React state during editing to avoid re-render lag
   const ptsRef = useRef<[number, number][]>([]);
   const historyRef = useRef<[number, number][][]>([]);
+
+  // Delete mode ref so map/marker handlers can read current value without stale closures
+  const deleteModeRef = useRef(false);
 
   // ── Load route ──────────────────────────────────────────────────────────────
 
@@ -141,8 +145,9 @@ export default function RouteGeometryEditor() {
       map.fitBounds(pl.getBounds(), { padding: [48, 48] });
     }
 
-    // Map click: insert point at best-fit segment position
+    // Map click: insert point (only when NOT in delete mode)
     map.on('click', (e: L.LeafletMouseEvent) => {
+      if (deleteModeRef.current) return;
       const newPt: [number, number] = [e.latlng.lat, e.latlng.lng];
       pushHistory();
       const idx = bestInsertIdx(ptsRef.current, newPt);
@@ -194,11 +199,26 @@ export default function RouteGeometryEditor() {
         bubblingMouseEvents: false,
       });
 
+      // Single click: delete vertex when in delete mode
+      marker.on('click', (e: L.LeafletMouseEvent) => {
+        L.DomEvent.stopPropagation(e);
+        if (!deleteModeRef.current) return;
+        if (ptsRef.current.length <= 2) return;
+        pushHistory();
+        ptsRef.current.splice(i, 1);
+        setUndoCount(historyRef.current.length);
+        redrawMarkers(map);
+      });
+
       // Save state on drag start (before position changes)
-      marker.on('dragstart', () => pushHistory());
+      marker.on('dragstart', () => {
+        if (deleteModeRef.current) return; // no drag in delete mode
+        pushHistory();
+      });
 
       // Update geometry + polyline in real-time during drag
       marker.on('drag', () => {
+        if (deleteModeRef.current) return;
         const { lat, lng } = marker.getLatLng();
         ptsRef.current[i] = [lat, lng];
         polylineRef.current?.setLatLngs(ptsRef.current.map(([la, ln]) => [la, ln] as L.LatLngTuple));
@@ -206,16 +226,7 @@ export default function RouteGeometryEditor() {
 
       // Redraw midpoint handles after drag ends
       marker.on('dragend', () => {
-        setUndoCount(historyRef.current.length);
-        redrawMarkers(map);
-      });
-
-      // Double-click to delete vertex
-      marker.on('dblclick', (e: L.LeafletMouseEvent) => {
-        L.DomEvent.stopPropagation(e);
-        if (ptsRef.current.length <= 2) return;
-        pushHistory();
-        ptsRef.current.splice(i, 1);
+        if (deleteModeRef.current) return;
         setUndoCount(historyRef.current.length);
         redrawMarkers(map);
       });
@@ -258,6 +269,15 @@ export default function RouteGeometryEditor() {
     }
   }
 
+  // ── Delete mode sync ────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    deleteModeRef.current = deleteMode;
+    if (mapContainerRef.current) {
+      mapContainerRef.current.style.cursor = deleteMode ? 'crosshair' : '';
+    }
+  }, [deleteMode]);
+
   // ── Undo ────────────────────────────────────────────────────────────────────
 
   function handleUndo() {
@@ -268,12 +288,15 @@ export default function RouteGeometryEditor() {
     redrawMarkers(mapRef.current);
   }
 
-  // Keyboard shortcut: Ctrl+Z / Cmd+Z
+  // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         e.preventDefault();
         handleUndo();
+      }
+      if (e.key === 'Escape') {
+        setDeleteMode(false);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -349,6 +372,18 @@ export default function RouteGeometryEditor() {
         </button>
 
         <button
+          onClick={() => setDeleteMode(d => !d)}
+          title="Modo borrar: clic en un punto para eliminarlo"
+          className={`flex items-center gap-1.5 text-sm font-medium transition-colors px-3 py-1.5 rounded-lg ${
+            deleteMode
+              ? 'bg-red-600 text-white hover:bg-red-700'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+          }`}
+        >
+          🗑️ {deleteMode ? 'Borrar: ON' : 'Borrar'}
+        </button>
+
+        <button
           onClick={handleSave}
           disabled={saving || ptsRef.current.length < 2}
           className="flex items-center gap-1.5 text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold px-4 py-1.5 rounded-lg transition-colors"
@@ -363,19 +398,25 @@ export default function RouteGeometryEditor() {
 
         {/* Floating hint pill */}
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[900] pointer-events-none select-none">
-          <div className="bg-gray-900/80 text-white text-xs px-4 py-2 rounded-full shadow-lg whitespace-nowrap flex items-center gap-2.5 backdrop-blur-sm">
-            <span className="flex items-center gap-1">
-              <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: '#fff', border: '2px solid #2563eb' }} />
-              Arrastra para mover
-            </span>
-            <span className="text-gray-500">·</span>
-            <span className="flex items-center gap-1">
-              <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: 'white', border: '1.5px solid #93C5FD' }} />
-              Clic para insertar
-            </span>
-            <span className="text-gray-500">·</span>
-            <span>Doble clic para borrar</span>
-          </div>
+          {deleteMode ? (
+            <div className="bg-red-600/90 text-white text-xs px-4 py-2 rounded-full shadow-lg whitespace-nowrap flex items-center gap-2 backdrop-blur-sm">
+              🗑️ <strong>Modo borrar activo</strong> — clic en cualquier punto para eliminarlo · Esc para salir
+            </div>
+          ) : (
+            <div className="bg-gray-900/80 text-white text-xs px-4 py-2 rounded-full shadow-lg whitespace-nowrap flex items-center gap-2.5 backdrop-blur-sm">
+              <span className="flex items-center gap-1">
+                <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: '#fff', border: '2px solid #2563eb' }} />
+                Arrastra para mover
+              </span>
+              <span className="text-gray-500">·</span>
+              <span className="flex items-center gap-1">
+                <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: 'white', border: '1.5px solid #93C5FD' }} />
+                Clic para insertar
+              </span>
+              <span className="text-gray-500">·</span>
+              <span>🗑️ Borrar para eliminar puntos</span>
+            </div>
+          )}
         </div>
       </div>
 

@@ -4,6 +4,7 @@ import { scanBlog } from '../services/blogScraper';
 import { processImports } from '../services/routeProcessor';
 import { importTransmetro } from '../scripts/importTransmetro';
 import { importBuses } from '../scripts/importBuses';
+import { importQruta } from '../scripts/importQruta';
 import { getIo } from '../config/socket';
 
 const VALID_ROLES = ['admin', 'premium', 'free'] as const;
@@ -401,6 +402,55 @@ export const importOSMBuses = async (_req: Request, res: Response): Promise<void
     res.json({ success: true, result });
   } catch (error) {
     console.error('Error importando buses:', error);
+    res.status(500).json({ message: 'Error interno del servidor' });
+  }
+};
+
+// DELETE /api/admin/routes/cleanup-empty — eliminar rutas sin geometría y sin paradas
+export const cleanupEmptyRoutes = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const preview = await pool.query(
+      `SELECT r.id, r.code, r.name, r.company
+       FROM routes r
+       WHERE (r.geometry IS NULL OR jsonb_array_length(r.geometry) = 0)
+         AND (SELECT COUNT(*) FROM stops WHERE route_id = r.id) = 0
+       ORDER BY r.code`
+    );
+
+    if (preview.rows.length === 0) {
+      res.json({ deleted: 0, routes: [] });
+      return;
+    }
+
+    const ids = preview.rows.map((r: { id: number }) => r.id);
+    await pool.query(`DELETE FROM routes WHERE id = ANY($1)`, [ids]);
+
+    // Delete companies that now have 0 routes
+    const deletedCompanies = await pool.query<{ name: string }>(
+      `DELETE FROM companies
+       WHERE id NOT IN (SELECT DISTINCT company_id FROM routes WHERE company_id IS NOT NULL)
+       RETURNING name`
+    );
+
+    res.json({
+      deleted: ids.length,
+      deletedCompanies: deletedCompanies.rows.length,
+      routes: preview.rows,
+    });
+  } catch (error) {
+    console.error('Error en cleanup:', error);
+    res.status(500).json({ message: 'Error interno del servidor' });
+  }
+};
+
+// POST /api/admin/routes/import-qruta — importar rutas GPS desde qruta Parse Server
+export const importQrutaRoutes = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { dryRun = false, force = false } = req.body as { dryRun?: boolean; force?: boolean };
+    const result = await importQruta({ dryRun, apply: !dryRun, force });
+    res.json({ success: true, result });
+  } catch (error) {
+    console.error('Error importando desde Qruta:', error);
     res.status(500).json({ message: 'Error interno del servidor' });
   }
 };

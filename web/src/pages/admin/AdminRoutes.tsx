@@ -3,7 +3,6 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { routesApi, stopsApi, adminApi } from '../../services/api';
-import { getSocket } from '../../services/socket';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -217,17 +216,9 @@ export default function AdminRoutes() {
   const [toggleLoadingId, setToggleLoadingId] = useState<number | null>(null);
   const [openDropdownId, setOpenDropdownId] = useState<number | null>(null);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
-  const [scanLoading, setScanLoading] = useState(false);
   const [scanResult, setScanResult] = useState<string | null>(null);
-  const [importMode, setImportMode] = useState<'all' | 'skip_manual'>('skip_manual');
-  const [scanProgress, setScanProgress] = useState<{
-    total: number;
-    current: number;
-    currentRoute: string;
-    status: 'scanning' | 'done' | 'processing';
-  } | null>(null);
-  const [progressLabel, setProgressLabel] = useState('');
-  const [pendingCount, setPendingCount] = useState(0);
+  const [cleanupLoading, setCleanupLoading] = useState(false);
+  const [qrutaLoading, setQrutaLoading] = useState(false);
 
   // ── Modal state ─────────────────────────────────────────────────────────────
   const [modalOpen, setModalOpen] = useState(false);
@@ -324,15 +315,6 @@ export default function AdminRoutes() {
 
   // ── Load routes ────────────────────────────────────────────────────────────
 
-  const loadPendingCount = useCallback(async () => {
-    try {
-      const res = await routesApi.getPendingCount();
-      setPendingCount((res.data as { pending: number }).pending);
-    } catch {
-      // silencioso
-    }
-  }, []);
-
   const loadRoutes = useCallback(async () => {
     setLoadingRoutes(true);
     setRoutesError(null);
@@ -348,8 +330,7 @@ export default function AdminRoutes() {
 
   useEffect(() => {
     loadRoutes();
-    loadPendingCount();
-  }, [loadRoutes, loadPendingCount]);
+  }, [loadRoutes]);
 
   // ── Auto-abrir ruta en editor si viene desde AlertaRoutes ─────────────────
   useEffect(() => {
@@ -1277,95 +1258,62 @@ export default function AdminRoutes() {
     }
   }
 
-  // ── Scan blog ──────────────────────────────────────────────────────────────
+  // ── Cleanup empty routes ───────────────────────────────────────────────────
 
-  async function handleScanBlog() {
-    setScanLoading(true);
-    setScanResult(null);
-    setScanProgress(null);
-    setProgressLabel('Escaneando blog');
-
-    const socket = getSocket();
-    socket.on('scan:progress', (data: {
-      total: number;
-      current: number;
-      currentRoute: string;
-      status: 'scanning' | 'done';
-      result?: { new: number; updated: number; unchanged: number; skipped: number; errors: number };
-    }) => {
-      if (data.status === 'done') {
-        setScanProgress(null);
-        const r = data.result!;
-        const skippedMsg = r.skipped > 0 ? `, ${r.skipped} omitidas (editadas)` : '';
-        setScanResult(
-          `✅ Escaneo: ${r.new} nuevas, ${r.updated} actualizadas, ` +
-          `${r.unchanged} sin cambios${skippedMsg}, ${r.errors} error${r.errors !== 1 ? 'es' : ''}`
-        );
-      } else {
-        setScanProgress({ total: data.total, current: data.current, currentRoute: data.currentRoute, status: data.status });
-      }
-    });
-
+  async function handleCleanupEmpty() {
+    if (!window.confirm('¿Eliminar todas las rutas sin geometría y sin paradas?\n\nEsto no se puede deshacer.')) return;
+    setCleanupLoading(true);
     try {
-      await routesApi.scanBlog(importMode === 'skip_manual');
-      await loadRoutes();
-      await loadPendingCount();
+      const res = await routesApi.cleanupEmptyRoutes();
+      const { deleted, deletedCompanies } = res.data as { deleted: number; deletedCompanies: number };
+      if (deleted === 0) {
+        setScanResult('✅ No hay rutas vacías para eliminar');
+      } else {
+        const companiesPart = deletedCompanies > 0
+          ? ` · ${deletedCompanies} empresa${deletedCompanies !== 1 ? 's' : ''} sin rutas eliminada${deletedCompanies !== 1 ? 's' : ''}`
+          : '';
+        setScanResult(`🧹 ${deleted} ruta${deleted !== 1 ? 's' : ''} eliminada${deleted !== 1 ? 's' : ''}${companiesPart}`);
+      }
+      if (deleted > 0) await loadRoutes();
     } catch {
-      setScanResult('❌ Error en el escaneo');
-      setScanProgress(null);
+      setScanResult('❌ Error al limpiar rutas');
     } finally {
-      socket.off('scan:progress');
-      setScanLoading(false);
+      setCleanupLoading(false);
     }
   }
 
-  // ── Process imports ────────────────────────────────────────────────────────
+  // ── Import Qruta ───────────────────────────────────────────────────────────
 
-  async function handleProcessImports() {
-    setScanLoading(true);
+  async function handleImportQruta() {
+    if (!window.confirm(
+      '¿Importar rutas GPS desde Qruta?\n\n' +
+      '• ~153 rutas urbanas con trazados GPS reales (2024–2026)\n' +
+      '• Actualiza geometría de rutas existentes\n' +
+      '• Inserta rutas nuevas\n' +
+      '• Conflictos (Δ > 3 km) NO se reemplazan automáticamente\n\n' +
+      'Puede tardar 1–2 minutos.'
+    )) return;
+    setQrutaLoading(true);
     setScanResult(null);
-    setScanProgress(null);
-    setProgressLabel('Procesando rutas');
-
-    const socket = getSocket();
-    socket.on('process:progress', (data: {
-      total: number;
-      current: number;
-      currentRoute: string;
-      status: 'processing' | 'done';
-      result?: { processed: number; errors: number };
-      completedRoute?: { id: number; name: string; status: string; is_active: boolean };
-    }) => {
-      if (data.status === 'done') {
-        setScanProgress(null);
-        const r = data.result!;
-        const skippedMsg = (r as any).skipped > 0 ? `, ${(r as any).skipped} omitidas (editadas)` : '';
-        setScanResult(
-          `✅ Procesamiento: ${r.processed} listas${skippedMsg}, ${r.errors} error${r.errors !== 1 ? 'es' : ''}`
-        );
-      } else {
-        setScanProgress({ total: data.total, current: data.current, currentRoute: data.currentRoute, status: data.status });
-        if (data.completedRoute) {
-          const cr = data.completedRoute;
-          setRoutes(prev => {
-            const exists = prev.find(r => r.id === cr.id);
-            if (exists) return prev.map(r => r.id === cr.id ? { ...r, ...cr } : r);
-            return [...prev, cr as Route];
-          });
-        }
-      }
-    });
-
     try {
-      await routesApi.processImports(importMode === 'skip_manual');
+      const res = await routesApi.importQruta();
+      const r = res.data.result as {
+        matched: number; inserted: number; skipped: number;
+        conflicts: number; pairs: number; errors: number;
+      };
+      setScanResult(
+        `📡 Qruta — ` +
+        `${r.matched} actualizada${r.matched !== 1 ? 's' : ''}, ` +
+        `${r.inserted} nueva${r.inserted !== 1 ? 's' : ''}, ` +
+        `${r.pairs} par${r.pairs !== 1 ? 'es' : ''} IDA/VUELTA` +
+        (r.conflicts > 0 ? `, ${r.conflicts} conflicto${r.conflicts !== 1 ? 's' : ''} (revisar editor)` : '') +
+        (r.errors > 0 ? `, ${r.errors} error${r.errors !== 1 ? 'es' : ''}` : '')
+      );
       await loadRoutes();
-      await loadPendingCount();
     } catch {
-      setScanResult('❌ Error en el procesamiento');
-      setScanProgress(null);
+      setScanResult('❌ Error al importar desde Qruta');
     } finally {
-      socket.off('process:progress');
-      setScanLoading(false);
+      setQrutaLoading(false);
     }
   }
 
@@ -1439,7 +1387,7 @@ export default function AdminRoutes() {
               ⋮
             </button>
             {openDropdownId === route.id && (
-              <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+              <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-[200]">
                 <button onClick={() => { navigate(`/admin/routes/${route.id}/geometry`); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2 text-sm text-blue-700 font-medium hover:bg-blue-50 rounded-t-lg transition-colors">
                   🗺️ Editar trazado
                 </button>
@@ -1520,47 +1468,22 @@ export default function AdminRoutes() {
       <div className="flex items-center justify-between mb-2">
         <h1 className="text-2xl font-bold text-gray-900">Rutas</h1>
         <div className="flex items-center gap-2">
-          {/* Import mode selector */}
-          <div className="flex items-center bg-gray-100 rounded-lg p-0.5 text-xs font-medium">
-            <button
-              onClick={() => setImportMode('skip_manual')}
-              className={`px-2.5 py-1.5 rounded-md transition-colors ${
-                importMode === 'skip_manual'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-              title="No sobreescribir rutas editadas manualmente"
-            >
-              🔒 Solo nuevas
-            </button>
-            <button
-              onClick={() => setImportMode('all')}
-              className={`px-2.5 py-1.5 rounded-md transition-colors ${
-                importMode === 'all'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-              title="Actualizar todas las rutas, incluyendo las editadas manualmente"
-            >
-              🔄 Todas
-            </button>
-          </div>
           <button
-            onClick={handleScanBlog}
-            disabled={scanLoading}
-            className="flex items-center gap-2 bg-gray-700 hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors"
+            onClick={handleCleanupEmpty}
+            disabled={cleanupLoading}
+            className="flex items-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors"
+            title="Elimina rutas sin geometría y sin paradas (importadas sin datos de trazado)"
           >
-            🔍 Escanear blog
+            {cleanupLoading ? '⏳ Limpiando…' : '🧹 Limpiar vacías'}
           </button>
-          {pendingCount > 0 && (
-            <button
-              onClick={handleProcessImports}
-              disabled={scanLoading}
-              className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors"
-            >
-              ⚙️ Procesar rutas ({pendingCount} pendientes)
-            </button>
-          )}
+          <button
+            onClick={handleImportQruta}
+            disabled={qrutaLoading || cleanupLoading}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors"
+            title="Importa ~153 rutas con trazados GPS reales desde Qruta (2024–2026)"
+          >
+            {qrutaLoading ? '⏳ Importando…' : '📡 Importar Qruta'}
+          </button>
           <button
             onClick={openModal}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors"
@@ -1570,23 +1493,6 @@ export default function AdminRoutes() {
           </button>
         </div>
       </div>
-
-      {/* Progress bar */}
-      {scanProgress && (
-        <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
-          <div className="flex justify-between text-xs text-gray-500 mb-1">
-            <span className="font-medium">{progressLabel} ({scanProgress.current}/{scanProgress.total})</span>
-            <span>{scanProgress.total > 0 ? Math.round((scanProgress.current / scanProgress.total) * 100) : 0}%</span>
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-2 mb-1.5">
-            <div
-              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-              style={{ width: `${scanProgress.total > 0 ? (scanProgress.current / scanProgress.total) * 100 : 0}%` }}
-            />
-          </div>
-          <p className="text-xs text-gray-500 truncate">{scanProgress.currentRoute}</p>
-        </div>
-      )}
 
       {/* Scan result message */}
       {scanResult && (
@@ -1715,7 +1621,7 @@ export default function AdminRoutes() {
             const isCollapsed = collapsedGroups.has(company);
             const groupRoutes = grouped[company];
             return (
-              <div key={company} className="border border-gray-200 rounded-xl overflow-hidden">
+              <div key={company} className="border border-gray-200 rounded-xl">
                 {/* Group header */}
                 <button
                   onClick={() => toggleGroup(company)}
@@ -1732,7 +1638,7 @@ export default function AdminRoutes() {
                 </button>
                 {/* Group table */}
                 {!isCollapsed && (
-                  <div className="overflow-x-auto">
+                  <div>
                     <table className="w-full text-sm">
                       <thead className="bg-white border-b border-gray-100 text-gray-500 uppercase text-xs tracking-wide">
                         <tr>
@@ -1757,7 +1663,7 @@ export default function AdminRoutes() {
         </div>
       ) : (
         /* ── Flat view ── */
-        <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <div className="rounded-xl border border-gray-200">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 uppercase text-xs tracking-wide">
               <tr>

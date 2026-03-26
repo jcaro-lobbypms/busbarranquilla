@@ -124,6 +124,12 @@ export const routesApi = {
   importBuses: () =>
     api.post('/api/admin/routes/import-buses'),
 
+  cleanupEmptyRoutes: () =>
+    api.delete('/api/admin/routes/cleanup-empty'),
+
+  importQruta: (opts: { dryRun?: boolean; force?: boolean } = {}) =>
+    api.post('/api/admin/routes/import-qruta', opts),
+
   getTransmetroRoutes: () =>
     api.get('/api/admin/transmetro'),
 
