@@ -21,6 +21,7 @@ import AdminStats from './pages/admin/AdminStats';
 import AdminRoutes from './pages/admin/AdminRoutes';
 import AdminGpsReports from './pages/admin/AdminGpsReports';
 import ResolutionProcessor from './pages/admin/ResolutionProcessor';
+import RouteGeometryEditor from './pages/admin/RouteGeometryEditor';
 
 function PublicLayout() {
   return <><Navbar /><Outlet /></>;
@@ -58,6 +59,8 @@ function AppRoutes() {
 
       {/* Layout admin — con AdminRoute guard + AdminLayout sidebar */}
       <Route element={<AdminRoute />}>
+        {/* Full-screen editor (sin sidebar) */}
+        <Route path="/admin/routes/:id/geometry" element={<RouteGeometryEditor />} />
         <Route element={<AdminLayout />}>
           <Route path="/admin" element={<Navigate to="/admin/stats" replace />} />
           <Route path="/admin/stats" element={<AdminStats />} />

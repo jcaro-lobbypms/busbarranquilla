@@ -75,6 +75,7 @@ docker-compose up           # Inicio normal
 **Routing:** React Router v6.
 - **Layout público** (`PublicLayout`) — Navbar + `<Outlet />` — cubre `/`, `/map`, `/login`, `/register`, `/premium`, `/payment/result`
 - **Layout admin** (`AdminRoute` guard + `AdminLayout`) — sidebar sin Navbar — cubre `/admin/*`
+- **Editor de trazado** (`RouteGeometryEditor`) — full-screen sin sidebar — `/admin/routes/:id/geometry` — accesible desde Admin Buses > "Editar trazado"
 
 **Auth:** `context/AuthContext.tsx` — JWT en `localStorage`, axios interceptor en `services/api.ts`.
 

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { routesApi, stopsApi } from '../../services/api';
@@ -24,6 +25,8 @@ interface BackendStop {
 }
 
 export default function AdminBuses() {
+  const navigate = useNavigate();
+
   // ── List state ────────────────────────────────────────────────────────────
   const [routes, setRoutes] = useState<BusRoute[]>([]);
   const [loading, setLoading] = useState(true);
@@ -399,10 +402,16 @@ export default function AdminBuses() {
                           </button>
 
                           {openDropdownId === route.id && (
-                            <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-xl z-[100]">
+                            <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-xl z-[100]">
+                              <button
+                                onClick={() => { navigate(`/admin/routes/${route.id}/geometry`); setOpenDropdownId(null); }}
+                                className="w-full text-left px-4 py-2 text-sm text-blue-700 font-medium hover:bg-blue-50 rounded-t-lg transition-colors"
+                              >
+                                ✏️ Editar trazado
+                              </button>
                               <button
                                 onClick={() => { openMapModal(route); setOpenDropdownId(null); }}
-                                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-t-lg transition-colors"
+                                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                               >
                                 🗺️ Ver en mapa
                               </button>
