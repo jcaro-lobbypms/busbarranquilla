@@ -6,6 +6,7 @@ import '../../../core/data/repositories/stops_repository.dart';
 import '../../../core/domain/models/stop.dart';
 import '../../../core/error/result.dart';
 import '../../../core/l10n/strings.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/empty_view.dart';
 import '../../../shared/widgets/error_view.dart';
@@ -116,11 +117,73 @@ class _StopSelectScreenState extends ConsumerState<StopSelectScreen> {
                         itemBuilder: (context, index) {
                           final stop = _stops[index];
                           final selected = stop.id == _selectedStopId;
-                          return ListTile(
-                            onTap: () => setState(() => _selectedStopId = stop.id),
-                            title: Text(stop.name),
-                            subtitle: Text('${stop.stopOrder}'),
-                            trailing: selected ? const Icon(Icons.check_circle) : null,
+                          final isRegreso = stop.leg == 'regreso';
+                          final legColor = isRegreso ? AppColors.routeC : AppColors.primary;
+
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+                            child: Material(
+                              color: selected
+                                  ? legColor.withValues(alpha: 0.1)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(10),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(10),
+                                onTap: () => setState(() => _selectedStopId = stop.id),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  child: Row(
+                                    children: <Widget>[
+                                      // Indicador de leg
+                                      Container(
+                                        width: 4,
+                                        height: 36,
+                                        decoration: BoxDecoration(
+                                          color: legColor.withValues(alpha: selected ? 1.0 : 0.35),
+                                          borderRadius: BorderRadius.circular(2),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      // Ícono de parada
+                                      Icon(
+                                        Icons.radio_button_checked,
+                                        size: 18,
+                                        color: selected ? legColor : AppColors.textSecondary,
+                                      ),
+                                      const SizedBox(width: 10),
+                                      // Nombre
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: <Widget>[
+                                            Text(
+                                              stop.name,
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                                                color: selected ? legColor : AppColors.textPrimary,
+                                              ),
+                                            ),
+                                            if (stop.leg != null)
+                                              Text(
+                                                stop.leg == 'ida' ? 'Ida' : 'Regreso',
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: legColor.withValues(alpha: 0.8),
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                      // Check
+                                      if (selected)
+                                        Icon(Icons.check_circle_rounded, color: legColor, size: 20),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
                           );
                         },
                       ),

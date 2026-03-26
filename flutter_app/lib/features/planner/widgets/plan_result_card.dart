@@ -72,10 +72,30 @@ class PlanResultCard extends ConsumerWidget {
                 meters: result.distanceMeters,
                 label: AppStrings.distanceDestLabel,
               ),
-              const SizedBox(height: 6),
-              Text(result.nearestStopName ?? AppStrings.notAvailable),
-              if (result.frequencyMinutes != null)
-                Text('${AppStrings.frequencyLabel}: ${result.frequencyMinutes} ${AppStrings.timeUnitMinutes}'),
+              const SizedBox(height: 8),
+              Row(
+                children: <Widget>[
+                  const Icon(Icons.place_outlined, size: 14, color: AppColors.textSecondary),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      result.nearestStopName ?? AppStrings.notAvailable,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                    ),
+                  ),
+                  if (result.frequencyMinutes != null) ...<Widget>[
+                    const SizedBox(width: 8),
+                    const Icon(Icons.schedule_outlined, size: 14, color: AppColors.textSecondary),
+                    const SizedBox(width: 4),
+                    Text(
+                      'c/${result.frequencyMinutes} ${AppStrings.timeUnitMinutes}',
+                      style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                    ),
+                  ],
+                ],
+              ),
               const SizedBox(height: 6),
               RouteActivityBadge(routeId: result.id),
               const SizedBox(height: 8),

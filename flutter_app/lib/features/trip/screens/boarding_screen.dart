@@ -154,53 +154,88 @@ class _BoardingScreenState extends ConsumerState<BoardingScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text(AppStrings.tripSelectRoute)),
       body: SafeArea(
-        child: Column(
-          children: <Widget>[
+        child: CustomScrollView(
+          slivers: <Widget>[
+            // ── Cerca de ti ────────────────────────────────────────────────
             if (_nearbyRoutes.isNotEmpty) ...<Widget>[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                child: Text(
-                  AppStrings.nearbyTitle,
-                  style: Theme.of(context).textTheme.titleMedium,
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Text(
+                    AppStrings.nearbyTitle,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
                 ),
               ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 110,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  itemCount: _nearbyRoutes.length,
-                  itemBuilder: (context, index) {
-                    final route = _nearbyRoutes[index];
-                    return _NearbyRouteCard(
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 96,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: _nearbyRoutes.length,
+                    itemBuilder: (context, index) {
+                      final route = _nearbyRoutes[index];
+                      return _NearbyRouteCard(
+                        route: route,
+                        onTap: () => _showRoutePreview(route),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 8)),
+            ],
+
+            // ── Buscador ───────────────────────────────────────────────────
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                child: AppTextField(
+                  label: AppStrings.tripSearchRouteHint,
+                  controller: _searchController,
+                  onChanged: (value) => setState(() => _search = value.trim()),
+                ),
+              ),
+            ),
+
+            // ── Contador ───────────────────────────────────────────────────
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                child: Text(
+                  '${filtered.length} rutas',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+
+            // ── Grilla 2 columnas ──────────────────────────────────────────
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              sliver: SliverGrid(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  childAspectRatio: 1.55,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final route = filtered[index];
+                    return _RouteGridCard(
                       route: route,
                       onTap: () => _showRoutePreview(route),
                     );
                   },
+                  childCount: filtered.length,
                 ),
-              ),
-              const SizedBox(height: 4),
-            ],
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: AppTextField(
-                label: AppStrings.tripSearchRouteHint,
-                controller: _searchController,
-                onChanged: (value) => setState(() => _search = value.trim()),
-              ),
-            ),
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-                itemCount: filtered.length,
-                itemBuilder: (context, index) {
-                  final route = filtered[index];
-                  return _RouteListCard(
-                    route: route,
-                    onTap: () => _showRoutePreview(route),
-                  );
-                },
               ),
             ),
           ],
@@ -214,106 +249,45 @@ class _NearbyRouteCard extends StatelessWidget {
   final BusRoute route;
   final VoidCallback onTap;
 
-  const _NearbyRouteCard({
-    required this.route,
-    required this.onTap,
-  });
+  const _NearbyRouteCard({required this.route, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final company = route.companyName ?? route.company ?? '';
+    final badgeColor = AppColors.forRouteCode(route.code);
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 175,
+        width: 160,
         margin: const EdgeInsets.only(right: 8),
-        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: badgeColor.withValues(alpha: 0.3), width: 1.5),
           boxShadow: const <BoxShadow>[
-            BoxShadow(
-              color: Color(0x14000000),
-              blurRadius: 6,
-              offset: Offset(0, 2),
-            ),
+            BoxShadow(color: Color(0x0F000000), blurRadius: 6, offset: Offset(0, 2)),
           ],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                RouteCodeBadge(code: route.code),
-                const Spacer(),
-                const Icon(Icons.directions_bus, size: 14, color: AppColors.textSecondary),
-                const SizedBox(width: 2),
-                const Icon(Icons.chevron_right, size: 16, color: AppColors.textSecondary),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              route.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            if (company.isNotEmpty)
-              Text(
-                'Operador: $company',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _RouteListCard extends StatelessWidget {
-  final BusRoute route;
-  final VoidCallback onTap;
-
-  const _RouteListCard({required this.route, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final company = route.companyName ?? route.company ?? '';
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(10),
-        boxShadow: const <BoxShadow>[
-          BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 6,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: Row(
-              children: <Widget>[
-                RouteCodeBadge(code: route.code),
-                const SizedBox(width: 10),
-                const Icon(Icons.directions_bus, size: 16, color: AppColors.textSecondary),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      RouteCodeBadge(code: route.code),
+                      const Spacer(),
+                      Icon(Icons.near_me, size: 13, color: badgeColor),
+                    ],
+                  ),
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       Text(
@@ -321,25 +295,97 @@ class _RouteListCard extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
                           color: AppColors.textPrimary,
                         ),
                       ),
                       if (company.isNotEmpty)
                         Text(
-                          'Operador: $company',
+                          company,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textSecondary,
-                          ),
+                          style: const TextStyle(fontSize: 10, color: AppColors.textSecondary),
                         ),
                     ],
                   ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RouteGridCard extends StatelessWidget {
+  final BusRoute route;
+  final VoidCallback onTap;
+
+  const _RouteGridCard({required this.route, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final company = route.companyName ?? route.company ?? '';
+    final badgeColor = AppColors.forRouteCode(route.code);
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const <BoxShadow>[
+          BoxShadow(color: Color(0x0F000000), blurRadius: 6, offset: Offset(0, 2)),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: <Widget>[
+                // Badge + icono
+                Row(
+                  children: <Widget>[
+                    RouteCodeBadge(code: route.code),
+                    const Spacer(),
+                    Icon(Icons.directions_bus, size: 14, color: badgeColor.withValues(alpha: 0.7)),
+                  ],
                 ),
-                const Icon(Icons.chevron_right, size: 18, color: AppColors.textSecondary),
+                // Nombre + operador
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      route.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                        height: 1.3,
+                      ),
+                    ),
+                    if (company.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 2),
+                      Text(
+                        company,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ],
             ),
           ),
