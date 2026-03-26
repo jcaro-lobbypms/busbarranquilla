@@ -458,14 +458,13 @@ export const importQrutaRoutes = async (req: Request, res: Response): Promise<vo
 // DELETE /api/admin/routes/reset-bus — eliminar TODAS las rutas de bus y empresas huérfanas
 export const resetBusRoutes = async (_req: Request, res: Response): Promise<void> => {
   try {
-    // Delete stops first (FK constraint)
-    await pool.query(
-      `DELETE FROM stops WHERE route_id IN (SELECT id FROM routes WHERE type = 'bus')`
-    );
-    // Delete route_legs if table exists
-    await pool.query(
-      `DELETE FROM route_legs WHERE route_id IN (SELECT id FROM routes WHERE type = 'bus')`
-    ).catch(() => { /* tabla puede no existir */ });
+    const busIds = `(SELECT id FROM routes WHERE type = 'bus')`;
+    // Delete all FK-dependent rows first
+    await pool.query(`DELETE FROM stops WHERE route_id IN ${busIds}`);
+    await pool.query(`DELETE FROM reports WHERE route_id IN ${busIds}`);
+    await pool.query(`DELETE FROM route_legs WHERE route_id IN ${busIds}`).catch(() => {});
+    await pool.query(`DELETE FROM route_update_alerts WHERE route_id IN ${busIds}`).catch(() => {});
+    await pool.query(`DELETE FROM user_favorites WHERE route_id IN ${busIds}`).catch(() => {});
 
     const deleted = await pool.query<{ id: number }>(
       `DELETE FROM routes WHERE type = 'bus' RETURNING id`
