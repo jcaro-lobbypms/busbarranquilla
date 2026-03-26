@@ -127,9 +127,9 @@ function normalizeCompany(name: string): string {
     .trim();
 }
 
-/** Canonical display name: "TRASALFA" → "Trasalfa", "cootrasol ltda" → "Cootrasol Ltda" */
-function toTitleCase(name: string): string {
-  return name.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+/** Canonical display name: siempre en mayúsculas — "Trasalfa" → "TRASALFA" */
+function toUpperCase(name: string): string {
+  return name.toUpperCase().trim();
 }
 
 // ── Fetch from Parse Server ────────────────────────────────────────────────
@@ -210,7 +210,7 @@ function filterAndDeduplicate(raw: QrutaRoute[]): FilterResult {
     const code        = group[0].name.trim();
     const companyName = group[0].company?.name ?? '';
 
-    const canonicalCompany = toTitleCase(companyName);
+    const canonicalCompany = toUpperCase(companyName);
 
     if (group.length === 1) {
       // Unique route
@@ -253,7 +253,7 @@ function filterAndDeduplicate(raw: QrutaRoute[]): FilterResult {
 // ── DB helpers ─────────────────────────────────────────────────────────────
 
 async function upsertCompany(name: string): Promise<number> {
-  const canonical = toTitleCase(name);
+  const canonical = toUpperCase(name);
   // Use case-insensitive lookup to avoid "TRASALFA" vs "Trasalfa" duplicates
   const existing = await pool.query<{ id: number }>(
     `SELECT id FROM companies WHERE LOWER(name) = LOWER($1) LIMIT 1`,
