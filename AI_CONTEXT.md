@@ -1345,10 +1345,13 @@ Removidos botones y lógica de "Escanear blog" y "Procesar imports" de `AdminRou
 - 🗑️ Reset rutas — borra todas las rutas bus + empresas (antes de reimportar)
 - 🧹 Limpiar vacías — solo rutas sin geometría y sin paradas
 - 📡 Importar Qruta — importa ~153 rutas GPS reales
+- 👁️ Ver ruta — abre modal read-only con Leaflet map + bicolor polyline (ida azul / regreso naranja)
 - ✏️ Editar datos — edita nombre/código/empresa/horarios
 - 🗺️ Editar trazado — abre RouteGeometryEditor en `/admin/routes/:id/geometry`
 
-*Última actualización: 2026-03-26 (v60)*
+El modal "Ver ruta" usa `previewRoute` / `previewLoading` states y `previewMapContainerRef` / `previewMapRef` refs. Al abrirse, hace `GET /api/routes/:id` para obtener `geometry` y `turnaround_idx` completos, luego inicializa un Leaflet map con bicolor polyline. El modal tiene leyenda "Ida / Regreso" condicional y se cierra con X o click en backdrop.
+
+*Última actualización: 2026-03-26 (v65)*
 
 ## Flutter — Route name truncation (2026-03-26) ✅
 
@@ -1395,4 +1398,11 @@ Fix en `backend/src/controllers/routeController.ts`:
 - `boarding_confirm_screen.dart`: pasa `turnaroundIdx: route.turnaroundIdx`
 - `map_screen.dart`: pasa `turnaroundIdx` en los 3 call sites (selectedRoute, waitingRoute, activeTripGeometry)
 
-*Última actualización: 2026-03-26 (v64)*
+**Feature — "Ver ruta" modal en panel admin (2026-03-26):**
+
+Botón "👁️ Ver ruta" en el dropdown de cada ruta en `AdminRoutes.tsx`. Al hacer clic: cierra el dropdown, muestra modal con header (badge de código + nombre + empresa), carga `GET /api/routes/:id` para obtener geometría completa, y renderiza Leaflet map con polyline bicolor (ida=azul `#1A5080`, regreso=naranja `#F97316`) usando `turnaround_idx`. Modal read-only — no permite edición. Se cierra con ✕ o click en backdrop. Leyenda "Ida / Regreso" visible solo cuando hay `turnaround_idx`.
+
+**Archivos modificados:**
+- `web/src/pages/admin/AdminRoutes.tsx`: `previewRoute`/`previewLoading` states, `previewMapContainerRef`/`previewMapRef` refs, `useEffect` para init/destroy Leaflet preview map, modal JSX con header+leyenda+mapa
+
+*Última actualización: 2026-03-26 (v65)*

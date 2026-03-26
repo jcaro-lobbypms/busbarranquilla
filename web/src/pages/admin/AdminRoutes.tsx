@@ -19,6 +19,8 @@ interface Route {
   is_active: boolean;
   status: string | null;
   manually_edited_at: string | null;
+  geometry?: [number, number][] | null;
+  turnaround_idx?: number | null;
 }
 
 interface Company {
@@ -216,6 +218,8 @@ export default function AdminRoutes() {
   const [toggleLoadingId, setToggleLoadingId] = useState<number | null>(null);
   const [openDropdownId, setOpenDropdownId] = useState<number | null>(null);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
+  const [previewRoute, setPreviewRoute] = useState<Route | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [scanResult, setScanResult] = useState<string | null>(null);
   const [cleanupLoading, setCleanupLoading] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
@@ -291,6 +295,8 @@ export default function AdminRoutes() {
   const diffLayersRef = useRef<(L.Polyline | L.CircleMarker)[]>([]); // diff comparison overlay
   const origGeomLayerRef = useRef<L.Polyline | null>(null); // reference underlay during adjust/confirm
   const autoOpenHandledRef = useRef(false); // evita re-abrir al recargar rutas
+  const previewMapContainerRef = useRef<HTMLDivElement | null>(null);
+  const previewMapRef = useRef<L.Map | null>(null);
   const [refTracks, setRefTracks] = useState<{ user_name: string; geometry: [number, number][] }[]>([]);
   const [showRefTracks, setShowRefTracks] = useState(true);
 
@@ -358,6 +364,63 @@ export default function AdminRoutes() {
     openEditModal(target, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routes, searchParams]);
+
+  // ── Preview map — init/destroy when previewRoute changes ──────────────────
+
+  useEffect(() => {
+    if (!previewRoute) {
+      if (previewMapRef.current) {
+        previewMapRef.current.remove();
+        previewMapRef.current = null;
+      }
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      if (!previewMapContainerRef.current || previewMapRef.current) return;
+
+      const map = L.map(previewMapContainerRef.current, {
+        center: [10.9685, -74.7813],
+        zoom: 13,
+        zoomControl: true,
+      });
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+      }).addTo(map);
+
+      const geo = previewRoute.geometry;
+      if (geo && geo.length > 1) {
+        const latlngs = geo.map(([lat, lng]) => [lat, lng] as [number, number]);
+        const split = previewRoute.turnaround_idx;
+
+        const IDA_COLOR = '#1A5080';
+        const REGRESO_COLOR = '#F97316';
+
+        if (split != null && split > 0 && split < latlngs.length - 1) {
+          const idaPts = latlngs.slice(0, split + 1);
+          const regresoPts = latlngs.slice(split);
+          L.polyline(idaPts, { color: IDA_COLOR, weight: 4, opacity: 0.9 }).addTo(map);
+          L.polyline(regresoPts, { color: REGRESO_COLOR, weight: 4, opacity: 0.9 }).addTo(map);
+        } else {
+          L.polyline(latlngs, { color: IDA_COLOR, weight: 4, opacity: 0.9 }).addTo(map);
+        }
+
+        const bounds = L.latLngBounds(latlngs);
+        map.fitBounds(bounds, { padding: [30, 30] });
+      }
+
+      previewMapRef.current = map;
+    }, 80);
+
+    return () => {
+      clearTimeout(timer);
+      if (previewMapRef.current) {
+        previewMapRef.current.remove();
+        previewMapRef.current = null;
+      }
+    };
+  }, [previewRoute]);
 
   // ── Load companies when modal opens ────────────────────────────────────────
 
@@ -1410,7 +1473,20 @@ export default function AdminRoutes() {
             </button>
             {openDropdownId === route.id && (
               <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-[200]">
-                <button onClick={() => { navigate(`/admin/routes/${route.id}/geometry`); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2 text-sm text-blue-700 font-medium hover:bg-blue-50 rounded-t-lg transition-colors">
+                <button onClick={async () => {
+                  setOpenDropdownId(null);
+                  setPreviewLoading(true);
+                  setPreviewRoute({ ...route });
+                  try {
+                    const res = await routesApi.getById(route.id);
+                    const full = res.data.route as Route;
+                    setPreviewRoute(full);
+                  } catch { /* muestra modal sin geometría */ }
+                  finally { setPreviewLoading(false); }
+                }} className="w-full text-left px-4 py-2 text-sm text-indigo-700 font-medium hover:bg-indigo-50 rounded-t-lg transition-colors">
+                  👁️ Ver ruta
+                </button>
+                <button onClick={() => { navigate(`/admin/routes/${route.id}/geometry`); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2 text-sm text-blue-700 font-medium hover:bg-blue-50 transition-colors">
                   🗺️ Editar trazado
                 </button>
                 <button onClick={() => { openEditModal(route); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
@@ -2192,6 +2268,73 @@ export default function AdminRoutes() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Preview de ruta (read-only map) ─────────────────────────────────── */}
+      {previewRoute && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+          onClick={() => setPreviewRoute(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+            style={{ width: '760px', maxWidth: '95vw', height: '520px', maxHeight: '90vh' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 shrink-0">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex items-center justify-center bg-blue-100 text-blue-800 font-bold text-sm px-2.5 py-1 rounded-lg">
+                  {previewRoute.code}
+                </span>
+                <div>
+                  <p className="font-semibold text-gray-900 text-sm leading-tight">{previewRoute.name}</p>
+                  {previewRoute.company_name && (
+                    <p className="text-xs text-gray-500 leading-tight">{previewRoute.company_name}</p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                {/* Legend */}
+                <div className="hidden sm:flex items-center gap-3 text-xs text-gray-500">
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block w-5 h-1.5 rounded-full" style={{ background: '#1A5080' }}></span>
+                    Ida
+                  </span>
+                  {previewRoute.turnaround_idx != null && (
+                    <span className="flex items-center gap-1.5">
+                      <span className="inline-block w-5 h-1.5 rounded-full" style={{ background: '#F97316' }}></span>
+                      Regreso
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={() => setPreviewRoute(null)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors text-xl leading-none"
+                  aria-label="Cerrar"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Map */}
+            <div className="flex-1 relative">
+              {previewLoading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-10">
+                  <span className="text-sm text-gray-500">Cargando geometría…</span>
+                </div>
+              )}
+              {!previewLoading && !previewRoute.geometry && (
+                <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-10">
+                  <span className="text-sm text-gray-400">Esta ruta aún no tiene trazado</span>
+                </div>
+              )}
+              <div ref={previewMapContainerRef} className="w-full h-full" />
+            </div>
           </div>
         </div>
       )}
