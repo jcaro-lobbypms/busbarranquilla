@@ -126,6 +126,18 @@ Cada reporte incluye `reported_geometry` (traza GPS del usuario) y `route_geomet
 - `planner_notifier.dart`: fallback por ciudades del AMB (Soledad, Malambo, Puerto Colombia, Galapa) y detección de ciudad en el query para evitar ambigüedad.
 - `address_search_field.dart`: subtítulo solo se muestra cuando hay ambigüedad y se resalta con color.
 
+## Bug crítico — bandera destino en viajes desde mapa
+
+**Síntoma:** Al abordar desde la vista de mapa sin destino y luego seleccionar punto de bajada, el ícono de bandera (`Icons.flag`) no aparecía en el mapa.
+
+**Causa raíz:** `destinationStop` en `active_trip_screen.dart` solo se calcula si `destinationStopId != null`. Para destinos elegidos en mapa, el stop sintético tiene `id: -1` y `destinationStopId` siempre es `null`. Resultado: `destinationStop == null` → no se renderiza el marker.
+
+**Fix:**
+- `active_trip_screen.dart`: agrega `monitorDest = notifier.dropoffMonitorDestination` como fallback cuando `destinationStop == null`. El marker de bandera usa `destinationStop ?? monitorDest`.
+- `trip_notifier.dart` (`updateDestinationByLatLng`): agrega `state = active.copyWith(dropoffPrompt: false)` para emitir estado y disparar rebuild al cambiar destino existente.
+
+**Regla:** Para destinos en mapa (map-pick), siempre usar `dropoffMonitorDestination` del notifier para UI, no `destinationStopId` del trip.
+
 ## Archivos clave modificados (esta sesión)
 - `backend/src/controllers/routeDescriptionController.ts` — geocodificación multimunicipio + Google Maps
 - `web/src/pages/admin/AdminRoutes.tsx` — borrado por segmento (reemplaza borrador freehand)

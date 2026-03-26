@@ -1361,4 +1361,14 @@ Nombres de ruta truncados a 1 línea con ellipsis en pantallas que no lo tenían
 
 Patrón final: badge de código coloreado (identificador rápido) + nombre truncado a 1 línea (contexto de recorrido).
 
-*Última actualización: 2026-03-26 (v61)*
+**Bug fix — bandera destino en viajes desde mapa (2026-03-26):**
+
+Cuando el usuario abordaba desde la vista de mapa (sin destino pre-seleccionado) y luego elegía un punto de bajada, el ícono de bandera (`Icons.flag`) no aparecía en el mapa porque `destinationStop` solo revisaba `destinationStopId` (que es siempre `null` para destinos elegidos en mapa — usan un stop sintético con `id: -1`).
+
+Fix: en `active_trip_screen.dart` se agrega `monitorDest` como fallback (`dropoffMonitorDestination` del notifier) para mostrar la bandera cuando no hay `destinationStopId`. Además, `updateDestinationByLatLng` en `trip_notifier.dart` ahora emite estado (`state = active.copyWith(dropoffPrompt: false)`) para que el mapa se repinte cuando se cambia el destino.
+
+**Archivos modificados:**
+- `active_trip_screen.dart`: `monitorDest` fallback para flag marker; marker layer usa `destinationStop ?? monitorDest`
+- `trip_notifier.dart` (`updateDestinationByLatLng`): agrega `state = active.copyWith(dropoffPrompt: false)` para disparar rebuild
+
+*Última actualización: 2026-03-26 (v62)*

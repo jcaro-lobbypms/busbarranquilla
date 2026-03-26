@@ -43,7 +43,7 @@ class PlanResultCard extends ConsumerWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        Text(result.name, style: Theme.of(context).textTheme.titleMedium),
+                        Text(result.name, style: Theme.of(context).textTheme.titleMedium, maxLines: 1, overflow: TextOverflow.ellipsis),
                         if ((result.companyName ?? '').isNotEmpty)
                           Text(result.companyName!, style: Theme.of(context).textTheme.bodySmall),
                       ],

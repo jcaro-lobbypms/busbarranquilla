@@ -675,6 +675,12 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen>
         ? active.stops.where((s) => s.id == active.trip.destinationStopId).firstOrNull
         : null;
 
+    // For map-picked destinations (no real stop id) fall back to the active
+    // dropoff monitor's target so the flag marker still appears on the map.
+    final monitorDest = destinationStop == null
+        ? ref.read(tripNotifierProvider.notifier).dropoffMonitorDestination
+        : null;
+
     final userLat = active.trip.currentLatitude;
     final userLng = active.trip.currentLongitude;
     final center = userLat != null && userLng != null
@@ -719,11 +725,13 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen>
                   color: AppColors.primary.withValues(alpha: 0.7),
                   strokeWidth: 5,
                 ),
-              if (destinationStop != null)
+              if (destinationStop != null || monitorDest != null)
                 MarkerLayer(
                   markers: <Marker>[
                     Marker(
-                      point: LatLng(destinationStop.latitude, destinationStop.longitude),
+                      point: destinationStop != null
+                          ? LatLng(destinationStop.latitude, destinationStop.longitude)
+                          : monitorDest!,
                       width: 36,
                       height: 36,
                       child: const Icon(Icons.flag, color: AppColors.success, size: 32),

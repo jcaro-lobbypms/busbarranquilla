@@ -13,6 +13,7 @@ class AddressSearchField extends StatefulWidget {
   final Future<List<NominatimResult>> Function(String query) onSearch;
   final ValueChanged<NominatimResult> onSelect;
   final VoidCallback? onPickFromMap;
+  final VoidCallback? onUseCurrentLocation;
   final List<SearchHistoryEntry> history;
 
   const AddressSearchField({
@@ -21,6 +22,7 @@ class AddressSearchField extends StatefulWidget {
     required this.onSelect,
     this.initialValue,
     this.onPickFromMap,
+    this.onUseCurrentLocation,
     this.history = const <SearchHistoryEntry>[],
     super.key,
   });
@@ -176,8 +178,11 @@ class _AddressSearchFieldState extends State<AddressSearchField> {
     return null;
   }
 
-  bool get _showHistory =>
-      _hasFocus && _controller.text.isEmpty && !_hasUserTyped && widget.history.isNotEmpty;
+  bool get _showEmptyDropdown =>
+      _hasFocus &&
+      _controller.text.isEmpty &&
+      !_hasUserTyped &&
+      (widget.onUseCurrentLocation != null || widget.history.isNotEmpty);
 
   @override
   Widget build(BuildContext context) {
@@ -209,8 +214,22 @@ class _AddressSearchFieldState extends State<AddressSearchField> {
           onChanged: _onChanged,
         ),
 
-        // ── History dropdown (field empty + focused) ─────────────────────────
-        if (_showHistory)
+        // ── Empty + focused dropdown: GPS option + history ───────────────────
+        if (_showEmptyDropdown) ...<Widget>[
+          if (widget.onUseCurrentLocation != null)
+            _ResultCard(
+              onTap: () {
+                _controller.text = AppStrings.currentLocationLabel;
+                _focusNode.unfocus();
+                setState(() {
+                  _suggestions = const <NominatimResult>[];
+                  _lastQuery = '';
+                });
+                widget.onUseCurrentLocation!();
+              },
+              leading: const Icon(Icons.my_location, size: 18, color: AppColors.primary),
+              title: AppStrings.useCurrentLocation,
+            ),
           ...widget.history.map((entry) {
             final secondary = _secondaryName(entry.displayName);
             return _ResultCard(
@@ -220,7 +239,8 @@ class _AddressSearchFieldState extends State<AddressSearchField> {
               subtitle: secondary,
               trailing: _relativeTime(entry.lastUsed),
             );
-          })
+          }),
+        ]
 
         // ── Searching indicator ──────────────────────────────────────────────
         else if (_isSearching)

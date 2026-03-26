@@ -82,6 +82,14 @@ class _PlannerScreenState extends ConsumerState<PlannerScreen> {
   }
 
   Future<void> _setCurrentLocationAsOrigin() async {
+    // Guard: if the user selected a manual address while this callback was
+    // pending (race condition), don't override it with GPS.
+    final currentOrigin = ref.read(plannerNotifierProvider.notifier).selectedOrigin;
+    if (currentOrigin != null &&
+        currentOrigin.displayName != AppStrings.currentLocationLabel) {
+      return;
+    }
+
     // Prefer position already in map state (zero cost).
     final mapState = ref.read(mapNotifierProvider);
     if (mapState is MapReady && mapState.userPosition != null) {
@@ -271,6 +279,7 @@ class _PlannerScreenState extends ConsumerState<PlannerScreen> {
                 initialValue: selectedOrigin?.displayName,
                 onSearch: notifier.searchAddress,
                 history: history,
+                onUseCurrentLocation: _setCurrentLocationAsOrigin,
                 onSelect: (result) {
                   notifier.setOrigin(result);
                   historyNotifier.record(result.displayName, result.lat, result.lng);
@@ -380,7 +389,7 @@ class _PlannerScreenState extends ConsumerState<PlannerScreen> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: <Widget>[
-                                    Text(route.name, style: Theme.of(context).textTheme.bodyMedium),
+                                    Text(route.name, style: Theme.of(context).textTheme.bodyMedium, maxLines: 1, overflow: TextOverflow.ellipsis),
                                     if ((route.companyName ?? route.company ?? '').isNotEmpty)
                                       Text(
                                         route.companyName ?? route.company ?? '',

@@ -73,6 +73,7 @@ abstract final class AppStrings {
   static const originLabel = 'Origen';
   static const destLabel = 'Destino';
   static const currentLocationLabel = 'Mi ubicación';
+  static const useCurrentLocation = 'Usar mi ubicación actual';
   static const plannerPickPointsError = 'Selecciona origen y destino para continuar.';
   static const plannerDestRequired = 'Escribe un destino para buscar rutas.';
   static const plannerSearching = 'Buscando lugares...';

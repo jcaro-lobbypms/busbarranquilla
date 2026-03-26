@@ -726,6 +726,8 @@ class TripNotifier extends Notifier<TripState> {
       stopOrder: 0,
     );
     _startDropoffMonitor(syntheticStop, active.stops);
+    // Emit a new state so the flag marker on the map moves to the new destination.
+    state = active.copyWith(dropoffPrompt: false);
     unawaited(ref.read(tripsRepositoryProvider).updateDestination(lat, lng, label));
   }
 
