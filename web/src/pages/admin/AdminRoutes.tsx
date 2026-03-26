@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { routesApi, stopsApi, adminApi } from '../../services/api';
@@ -195,6 +195,7 @@ function Step1Form({ form, onChange, companies, loadingCompanies }: Step1FormPro
 
 export default function AdminRoutes() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   // ── Route list state ────────────────────────────────────────────────────────
   const [routes, setRoutes] = useState<Route[]>([]);
@@ -1438,9 +1439,12 @@ export default function AdminRoutes() {
               ⋮
             </button>
             {openDropdownId === route.id && (
-              <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
-                <button onClick={() => { openEditModal(route); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-t-lg transition-colors">
-                  ✏️ Editar
+              <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                <button onClick={() => { navigate(`/admin/routes/${route.id}/geometry`); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2 text-sm text-blue-700 font-medium hover:bg-blue-50 rounded-t-lg transition-colors">
+                  🗺️ Editar trazado
+                </button>
+                <button onClick={() => { openEditModal(route); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                  ✏️ Editar datos
                 </button>
                 <button onClick={() => { handleToggleActive(route.id); setOpenDropdownId(null); }} disabled={toggleLoadingId === route.id} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                   {route.is_active ? '🔴 Desactivar' : '🟢 Activar'}

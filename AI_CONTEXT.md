@@ -66,7 +66,7 @@ docker-compose up           # Inicio normal
 
 **Regla importante:** Rutas con nombre (`/nearby`, `/search`, `/plan`, `/current`) siempre ANTES de rutas con parámetro (`/:id`) en el mismo archivo para evitar conflictos en Express.
 
-**Geometría de rutas:** Almacenada como JSONB `[lat, lng][]` en `routes.geometry`. Se genera via OSRM (2 intentos: ruta completa → segmento por segmento + fallback línea recta). 78 rutas tienen geometría.
+**Geometría de rutas:** Almacenada como JSONB `[lat, lng][]` en `routes.geometry`. Se genera via OSRM (2 intentos: ruta completa → segmento por segmento + fallback línea recta). 78 rutas tienen geometría base. Para actualizar con trazados GPS reales usar `importQruta` (ver scripts abajo).
 
 **Trip planner** (`/api/routes/plan`): Basado en geometría, no en paradas. Un bus aplica si su polilínea pasa dentro de 250m del origen Y 1km del destino, con índice destino > índice origen (verificación de dirección).
 
@@ -867,6 +867,30 @@ Cuando el usuario está en `BoardingScreen` y toca `RoutePreviewSheet`, puede el
 - `Vibration.vibrate()` silenciosamente fallaba en algunos dispositivos sin vibrador
 - Fix: helper estático `_vibrate({pattern, intensities})` en `TripNotifier` — llama `Vibration.hasVibrator()` primero, si retorna `false` no vibra
 - Los 3 call sites (prepare/alight/desvío) usan `_vibrate` en vez de `Vibration.vibrate` directo
+
+---
+
+### Scripts de importación (`backend/src/scripts/`)
+
+| Script | Comando | Fuente | Descripción |
+|--------|---------|--------|-------------|
+| `importBuses.ts` | `_runImport.ts buses` | AMBQ KMZ 2018 | 85 rutas base (geometría congelada 2018) |
+| `importTransmetro.ts` | `_runImport.ts transmetro` | OSM Overpass | Rutas Transmetro |
+| `importQruta.ts` | `_runImport.ts qruta [flags]` | qruta Parse Server | **206 rutas con GPS real 2024–2026** |
+
+**importQruta flags:**
+- `--dry-run` — solo reporte, no toca DB
+- `--apply` — aplica sin confirmación (respeta umbral conflicto 3 km)
+- `--apply --force` — aplica todo incluyendo conflictos (solo pasa bbox AMB)
+
+**Lógica anti-duplicado de importQruta:**
+- Unicidad = **(empresa + código)**. Mismo código en diferente empresa = ruta distinta.
+- Pares IDA/VUELTA (mismo código + misma empresa x2): la de más puntos queda como `CODE`, la de menos como `CODE-R`.
+- Empresas excluidas: Transmetro, Mio, A. prueba.
+- Filtros: `name=Borrar`, `status≠true`, `path<3pts` → descartados.
+- Cross-reference DB: busca por (empresa+código exacto) → (empresa+prefijo) → (solo código) → nueva.
+- Política de conflicto: Δ centroide ≤800m=MEJORA, 800m–3km=CAMBIO, >3km=CONFLICTO (no aplica sin --force).
+- Bbox validación: centroide qruta debe estar en lat 10.60–11.20, lng -75.10–-74.50.
 
 ---
 

@@ -191,6 +191,7 @@ export default function RouteGeometryEditor() {
         icon: VERTEX_ICON,
         draggable: true,
         zIndexOffset: 200,
+        bubblingMouseEvents: false,
       });
 
       // Save state on drag start (before position changes)
