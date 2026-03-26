@@ -158,6 +158,29 @@ Historial detallado de fases. Para el estado actual ver `CLAUDE.md` (fases) y `A
 
 ---
 
+## Phase 3.10 — Importación Qruta + limpieza admin (2026-03-26)
+
+**Fuente de geometría GPS real:**
+- Script `importQruta.ts` importa ~153 rutas con trazados GPS reales desde qruta Parse Server (2024–2026)
+- Excluye Transmetro/Mio, filtra rutas inactivas y sin geometría
+- Maneja pares IDA/VUELTA: mismo código+empresa x2 → `CODE` (más puntos) y `CODE-R` (retorno)
+- Anti-duplicado por (empresa+código), lookup case-insensitive
+- Política de conflicto: Δ centroide ≤800m=MEJORA, 800m–3km=CAMBIO, >3km=CONFLICTO (skip sin --force)
+- Nombres de empresa normalizados a MAYÚSCULAS — evita duplicados "TRASALFA" vs "Trasalfa"
+- Endpoint admin: `POST /api/admin/routes/import-qruta`
+
+**Endpoints de mantenimiento:**
+- `DELETE /api/admin/routes/cleanup-empty` — elimina rutas sin geometría y sin paradas + empresas huérfanas
+- `DELETE /api/admin/routes/reset-bus` — reset total de rutas tipo bus (stops, reports, legs, alerts, favorites) + empresas huérfanas
+
+**Limpieza del panel admin:**
+- Removidos "Escanear blog" y "Procesar imports" — causaban rutas sin geometría
+- Removido sidebar "Buses" (duplicado de "Rutas")
+- Agregado "Editar trazado" en dropdown de cada ruta
+- Editor de geometría: reemplazado doble-click por botón "🗑️ Borrar" toggle para eliminar vértices
+
+---
+
 ## Phase 4 — Flutter Mobile (En progreso)
 
 App Flutter feature-complete, produciendo APKs de release. Ver `AI_CONTEXT.md` y `flutter_specs/` para detalles.

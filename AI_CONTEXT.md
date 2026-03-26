@@ -891,6 +891,16 @@ Cuando el usuario está en `BoardingScreen` y toca `RoutePreviewSheet`, puede el
 - Cross-reference DB: busca por (empresa+código exacto) → (empresa+prefijo) → (solo código) → nueva.
 - Política de conflicto: Δ centroide ≤800m=MEJORA, 800m–3km=CAMBIO, >3km=CONFLICTO (no aplica sin --force).
 - Bbox validación: centroide qruta debe estar en lat 10.60–11.20, lng -75.10–-74.50.
+- **Normalización de empresa:** `toUpperCase()` antes de insertar → "Trasalfa" y "TRASALFA" colapsan en "TRASALFA". Lookup con `LOWER(name)` en `upsertCompany` para evitar duplicados case-sensitive.
+
+**Endpoints admin de mantenimiento de rutas:**
+- `DELETE /api/admin/routes/cleanup-empty` — elimina rutas sin geometría Y sin paradas, luego empresas huérfanas
+- `DELETE /api/admin/routes/reset-bus` — **reset total**: borra stops, reports, route_legs, alerts, favorites de rutas tipo `bus`, luego borra todas las rutas `type='bus'`, luego empresas huérfanas. Usar antes de re-importar desde Qruta.
+- `POST /api/admin/routes/import-qruta` — importa desde qruta Parse Server con `{ dryRun?, force? }`
+
+**Flujo de reset + reimport recomendado:**
+1. Admin → 🗑️ Reset rutas (borra todo)
+2. Admin → 📡 Importar Qruta (re-importa con empresas en MAYÚSCULAS)
 
 ---
 
@@ -1321,3 +1331,34 @@ Todos los calls usan `unawaited(AnalyticsService.method())` — nunca bloquean e
 **Exclusión:** nunca se guarda `AppStrings.currentLocationLabel` (ubicación GPS).
 
 *Última actualización: 2026-03-23 (v59)*
+
+## Admin — Limpieza UI scan-blog (2026-03-26) ✅
+
+Removidos botones y lógica de "Escanear blog" y "Procesar imports" de `AdminRoutes.tsx` — eran responsables de importar rutas sin geometría que dejaban rutas vacías en la DB. También se eliminó el sidebar "Buses" (duplicado de "Rutas"). El editor de trazado ahora está accesible directamente desde el dropdown de cada ruta en AdminRoutes.
+
+**Estados/funciones eliminados de AdminRoutes.tsx:**
+- `scanProgress`, `progressLabel`, `pendingCount`, `importMode`, `scanLoading`
+- `loadPendingCount()`, `handleScanBlog()`, `handleProcessImports()`
+- Progress bar UI, selector 🔒/🔄, import de `getSocket`
+
+**Botones activos en AdminRoutes:**
+- 🗑️ Reset rutas — borra todas las rutas bus + empresas (antes de reimportar)
+- 🧹 Limpiar vacías — solo rutas sin geometría y sin paradas
+- 📡 Importar Qruta — importa ~153 rutas GPS reales
+- ✏️ Editar datos — edita nombre/código/empresa/horarios
+- 🗺️ Editar trazado — abre RouteGeometryEditor en `/admin/routes/:id/geometry`
+
+*Última actualización: 2026-03-26 (v60)*
+
+## Flutter — Route name truncation (2026-03-26) ✅
+
+Nombres de ruta truncados a 1 línea con ellipsis en pantallas que no lo tenían. Los nombres de qruta son largos (ej: "Corredor Universitario - Nogales - Silencio") y desbordaban el layout.
+
+**Archivos modificados:**
+- `plan_result_card.dart`: `Text(result.name)` → `maxLines: 1, overflow: TextOverflow.ellipsis`
+- `quick_board_sheet.dart`: `title: Text(route.name)` → con ellipsis
+- `planner_screen.dart` (rutas cercanas): `Text(route.name)` → con ellipsis
+
+Patrón final: badge de código coloreado (identificador rápido) + nombre truncado a 1 línea (contexto de recorrido).
+
+*Última actualización: 2026-03-26 (v61)*
